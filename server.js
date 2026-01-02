@@ -9,8 +9,19 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+const allowedOrigins = [
+    "https://telegram-hisobchi-bot-frontend.vercel.app",
+    "https://telegram-web-app-sand.vercel.app"
+];
+
 app.use(cors({
-    origin: "https://telegram-hisobchi-bot-frontend.vercel.app",
+    origin: function (origin, callback) {
+        if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
     credentials: true,
     allowedHeaders: ["Content-Type", "Authorization", "x-telegram-id", "x-telegram-init-data"]
 }));

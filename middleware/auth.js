@@ -25,7 +25,7 @@ const authenticate = async (req, res, next) => {
     let user = await User.findOne({ telegramId: telegramId });
 
     if (!user) {
-      console.log("User not found for telegramId:", telegramId);
+      console.log(`Incoming ID: [${telegramId}]`);
       // Admin bo'lsa va hali bazada bo'lmasa, yaratishga ruxsat berish mumkin (ixtiyoriy)
       if (telegramId === process.env.ADMIN_ID) {
         console.log("Creating admin user...");
