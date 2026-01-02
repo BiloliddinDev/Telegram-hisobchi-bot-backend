@@ -1,5 +1,6 @@
 const express = require("express");
 const router = express.Router();
+const ExcelJS = require("exceljs");
 const User = require("../models/User");
 const Product = require("../models/Product");
 const Sale = require("../models/Sale");
@@ -248,6 +249,98 @@ router.get("/reports/monthly", async (req, res) => {
       sales,
     });
   } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Export to Excel
+router.get("/export-excel", async (req, res) => {
+  try {
+    const products = await Product.find().sort({ name: 1 });
+    const sales = await Sale.find()
+      .populate("productId")
+      .populate("sellerId")
+      .sort({ timestamp: -1 });
+
+    const workbook = new ExcelJS.Workbook();
+    
+    // Sheet 1: Ombor qoldig'i
+    const sheet1 = workbook.addWorksheet("Ombor qoldig'i");
+    sheet1.columns = [
+      { header: "Nomi", key: "name", width: 30 },
+      { header: "Kategoriya", key: "category", width: 20 },
+      { header: "Narxi", key: "price", width: 15 },
+      { header: "Soni", key: "count", width: 15 },
+      { header: "Jami qiymati (Tannarx bo'yicha)", key: "totalValue", width: 25 },
+    ];
+
+    let totalWarehouseValue = 0;
+
+    products.forEach((product) => {
+      // Calculate total quantity (warehouse + sellers)
+      const sellerStocksTotal = product.sellerStocks 
+        ? product.sellerStocks.reduce((sum, s) => sum + (s.quantity || 0), 0) 
+        : 0;
+      const totalQuantity = (product.count || 0) + sellerStocksTotal;
+      
+      const itemValue = totalQuantity * (product.costPrice || 0);
+      totalWarehouseValue += itemValue;
+
+      sheet1.addRow({
+        name: product.name,
+        category: product.category,
+        price: product.price,
+        count: totalQuantity,
+        totalValue: itemValue,
+      });
+    });
+
+    // Add total row at the end
+    sheet1.addRow({});
+    sheet1.addRow({
+      name: "UMUMIY OMBOUR QOLDIG'I SUMMASI:",
+      totalValue: totalWarehouseValue,
+    });
+
+    // Style the total row
+    const totalRow = sheet1.lastRow;
+    totalRow.getCell("name").font = { bold: true };
+    totalRow.getCell("totalValue").font = { bold: true };
+
+    // Sheet 2: Sotuvlar tarixi
+    const sheet2 = workbook.addWorksheet("Sotuvlar tarixi");
+    sheet2.columns = [
+      { header: "Sana", key: "date", width: 20 },
+      { header: "Mahsulot nomi", key: "productName", width: 30 },
+      { header: "Miqdori", key: "quantity", width: 15 },
+      { header: "Umumiy summa", key: "totalAmount", width: 20 },
+      { header: "Sotuvchi ismi", key: "sellerName", width: 25 },
+    ];
+
+    sales.forEach((sale) => {
+      sheet2.addRow({
+        date: sale.timestamp ? new Date(sale.timestamp).toLocaleString("uz-UZ") : "",
+        productName: sale.productId ? sale.productId.name : "O'chirilgan mahsulot",
+        quantity: sale.quantity,
+        totalAmount: sale.totalAmount,
+        sellerName: sale.sellerId ? `${sale.sellerId.firstName} ${sale.sellerId.lastName || ""}` : "Noma'lum",
+      });
+    });
+
+    // Headers for response
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    );
+    res.setHeader(
+      "Content-Disposition",
+      "attachment; filename=" + "Hisobot_" + new Date().toISOString().split('T')[0] + ".xlsx"
+    );
+
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (error) {
+    console.error("Excel export error:", error);
     res.status(500).json({ error: error.message });
   }
 });
