@@ -53,16 +53,17 @@ router.post("/", authenticate, validateSale, async (req, res) => {
       notes,
     });
 
-    // Update stocks
+    // Update stocks using findByIdAndUpdate and $inc
     if (req.user.role === "seller") {
-      const sellerStockIndex = product.sellerStocks.findIndex(
-        (s) => s.seller.toString() === req.user._id.toString()
+      await Product.findOneAndUpdate(
+        { _id: productId, "sellerStocks.seller": req.user._id },
+        { $inc: { "sellerStocks.$.quantity": -quantity } }
       );
-      product.sellerStocks[sellerStockIndex].quantity -= quantity;
     } else {
-      product.stock -= quantity;
+      await Product.findByIdAndUpdate(productId, {
+        $inc: { stock: -quantity },
+      });
     }
-    await product.save();
 
     const populatedSale = await Sale.findById(sale._id)
       .populate("product", "name price image")
