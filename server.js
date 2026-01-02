@@ -9,11 +9,16 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-app.use(cors({ origin: "*", credentials: true }));
+app.use(cors({
+    origin: "https://telegram-hisobchi-bot-frontend.vercel.app",
+    credentials: true,
+    allowedHeaders: ["Content-Type", "Authorization", "x-telegram-id", "x-telegram-init-data"]
+}));
 app.use(express.json());
 
 const connectDB = async () => {
     try {
+        mongoose.set("bufferCommands", false);
         await mongoose.connect(process.env.MONGO_URI, {
             serverSelectionTimeoutMS: 5000,
         });
@@ -28,7 +33,7 @@ const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
 console.log("🤖 Bot polling rejimida ishga tushdi...");
 
 const User = require("./models/User");
-const FRONTEND_URL = process.env.FRONTEND_URL || "https://telegram-web-app-sand.vercel.app/";
+const FRONTEND_URL = process.env.FRONTEND_URL || "https://telegram-hisobchi-bot-frontend.vercel.app";
 
 const normalizePhone = (phone) => {
     let cleaned = phone.replace(/\D/g, "");
