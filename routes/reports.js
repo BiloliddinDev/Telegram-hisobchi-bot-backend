@@ -12,9 +12,9 @@ router.get("/", authenticate, async (req, res) => {
 
     // Sellers can only see their own reports
     if (req.user.role === "seller") {
-      query.seller = req.user._id;
+      query.sellerId = req.user._id;
     } else if (sellerId) {
-      query.seller = sellerId;
+      query.sellerId = sellerId;
     }
 
     const startDate = new Date(
@@ -31,12 +31,12 @@ router.get("/", authenticate, async (req, res) => {
       59
     );
 
-    query.saleDate = { $gte: startDate, $lte: endDate };
+    query.timestamp = { $gte: startDate, $lte: endDate };
 
     const sales = await Sale.find(query)
-      .populate("seller", "username firstName lastName")
-      .populate("product", "name price")
-      .sort({ saleDate: -1 });
+      .populate("sellerId", "username firstName lastName")
+      .populate("productId", "name price")
+      .sort({ timestamp: -1 });
 
     const totalSales = sales.length;
     const totalRevenue = sales.reduce((sum, sale) => sum + sale.totalAmount, 0);

@@ -31,14 +31,14 @@ const productSchema = new mongoose.Schema({
     type: String,
     default: "",
   },
-  stock: {
+  count: {
     type: Number,
     default: 0,
     min: 0,
   },
   sellerStocks: [
     {
-      seller: {
+      sellerId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "User",
       },

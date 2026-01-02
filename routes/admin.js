@@ -85,7 +85,7 @@ router.delete("/sellers/:id", async (req, res) => {
   }
 });
 
-// Assign product to seller
+// Assign productId to seller
 router.post("/sellers/:sellerId/products/:productId", async (req, res) => {
   try {
     const { quantity } = req.body;
@@ -101,35 +101,35 @@ router.post("/sellers/:sellerId/products/:productId", async (req, res) => {
     }
 
     const assignQuantity = parseInt(quantity) || 0;
-    if (assignQuantity > product.stock) {
+    if (assignQuantity > product.count) {
       return res.status(400).json({ error: "Omborda yetarli mahsulot yo'q" });
     }
 
-    // Add product to seller's assigned products
+    // Add productId to seller's assigned products
     if (!seller.assignedProducts.includes(product._id)) {
       seller.assignedProducts.push(product._id);
       await seller.save();
     }
 
-    // Add seller to product's assigned sellers
+    // Add seller to productId's assigned sellers
     if (!product.assignedSellers.includes(seller._id)) {
       product.assignedSellers.push(seller._id);
     }
     
-    // Reduce stock if quantity provided
+    // Reduce count if quantity provided
     if (assignQuantity > 0) {
-      product.stock -= assignQuantity;
+      product.count -= assignQuantity;
       
-      // Update seller's stock for this product
+      // Update seller's count for this productId
       const sellerStockIndex = product.sellerStocks.findIndex(
-        (s) => s.seller.toString() === seller._id.toString()
+        (s) => s.sellerId.toString() === seller._id.toString()
       );
       
       if (sellerStockIndex > -1) {
         product.sellerStocks[sellerStockIndex].quantity += assignQuantity;
       } else {
         product.sellerStocks.push({
-          seller: seller._id,
+          sellerId: seller._id,
           quantity: assignQuantity
         });
       }
@@ -142,7 +142,7 @@ router.post("/sellers/:sellerId/products/:productId", async (req, res) => {
   }
 });
 
-// Unassign product from seller
+// Unassign productId from seller
 router.delete("/sellers/:sellerId/products/:productId", async (req, res) => {
   try {
     const seller = await User.findById(req.params.sellerId);
@@ -191,24 +191,24 @@ router.get("/reports/monthly", async (req, res) => {
     );
 
     const sales = await Sale.find({
-      saleDate: { $gte: startDate, $lte: endDate },
+      timestamp: { $gte: startDate, $lte: endDate },
     })
-      .populate("seller", "username firstName lastName")
-      .populate("product", "name price")
-      .sort({ saleDate: -1 });
+      .populate("sellerId", "username firstName lastName")
+      .populate("productId", "name price")
+      .sort({ timestamp: -1 });
 
     // Calculate statistics
     const totalSales = sales.length;
     const totalRevenue = sales.reduce((sum, sale) => sum + sale.totalAmount, 0);
     const totalQuantity = sales.reduce((sum, sale) => sum + sale.quantity, 0);
 
-    // Sales by seller
+    // Sales by sellerId
     const salesBySeller = {};
     sales.forEach((sale) => {
-      const sellerId = sale.seller._id.toString();
+      const sellerId = sale.sellerId._id.toString();
       if (!salesBySeller[sellerId]) {
         salesBySeller[sellerId] = {
-          seller: sale.seller,
+          sellerId: sale.sellerId,
           totalSales: 0,
           totalRevenue: 0,
           totalQuantity: 0,
@@ -219,13 +219,13 @@ router.get("/reports/monthly", async (req, res) => {
       salesBySeller[sellerId].totalQuantity += sale.quantity;
     });
 
-    // Sales by product
+    // Sales by productId
     const salesByProduct = {};
     sales.forEach((sale) => {
-      const productId = sale.product._id.toString();
+      const productId = sale.productId._id.toString();
       if (!salesByProduct[productId]) {
         salesByProduct[productId] = {
-          product: sale.product,
+          productId: sale.productId,
           totalSales: 0,
           totalRevenue: 0,
           totalQuantity: 0,

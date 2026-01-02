@@ -17,7 +17,7 @@ router.get("/", authenticate, isAdmin, async (req, res) => {
   }
 });
 
-// Get single product
+// Get single productId
 router.get("/:id", authenticate, async (req, res) => {
   try {
     const product = await Product.findById(req.params.id).populate(
@@ -46,7 +46,7 @@ router.post("/", authenticate, isAdmin, validateProduct, async (req, res) => {
       price,
       costPrice,
       category,
-      stock,
+      count: stock,
       image,
       sku,
       color,
@@ -66,7 +66,7 @@ router.put("/:id", authenticate, isAdmin, validateProduct, async (req, res) => {
 
     const product = await Product.findByIdAndUpdate(
       req.params.id,
-      { name, description, price, costPrice, category, stock, image, sku, color, isActive },
+      { name, description, price, costPrice, category, count: stock, image, sku, color, isActive },
       { new: true }
     );
 

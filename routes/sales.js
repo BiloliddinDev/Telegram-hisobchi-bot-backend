@@ -16,7 +16,7 @@ router.post("/", authenticate, validateSale, async (req, res) => {
       return res.status(404).json({ error: "Product not found" });
     }
 
-    // Check if seller has access to this product
+    // Check if seller has access to this productId
     if (req.user.role === "seller") {
       const hasAccess = req.user.assignedProducts.some(
         (id) => id.toString() === productId
@@ -24,27 +24,27 @@ router.post("/", authenticate, validateSale, async (req, res) => {
       if (!hasAccess) {
         return res
           .status(403)
-          .json({ error: "You do not have access to this product" });
+          .json({ error: "You do not have access to this productId" });
       }
     }
 
-    // Check stock
+    // Check count
     if (req.user.role === "seller") {
       const sellerStock = product.sellerStocks.find(
-        (s) => s.seller.toString() === req.user._id.toString()
+        (s) => s.sellerId.toString() === req.user._id.toString()
       );
       if (!sellerStock || sellerStock.quantity < quantity) {
         return res.status(400).json({ error: "Sizda yetarli mahsulot yo'q" });
       }
-    } else if (product.stock < quantity) {
+    } else if (product.count < quantity) {
       return res.status(400).json({ error: "Omborda yetarli mahsulot yo'q" });
     }
 
     const totalAmount = price * quantity;
 
     const sale = await Sale.create({
-      seller: req.user._id,
-      product: productId,
+      sellerId: req.user._id,
+      productId: productId,
       quantity,
       price,
       totalAmount,
@@ -55,19 +55,20 @@ router.post("/", authenticate, validateSale, async (req, res) => {
 
     // Update stocks using findByIdAndUpdate and $inc
     if (req.user.role === "seller") {
-      await Product.findOneAndUpdate(
-        { _id: productId, "sellerStocks.seller": req.user._id },
-        { $inc: { "sellerStocks.$.quantity": -quantity } }
+      await Product.findByIdAndUpdate(
+        productId,
+        { $inc: { "sellerStocks.$[elem].quantity": -quantity } },
+        { arrayFilters: [{ "elem.sellerId": req.user._id }] }
       );
     } else {
       await Product.findByIdAndUpdate(productId, {
-        $inc: { stock: -quantity },
+        $inc: { count: -quantity },
       });
     }
 
     const populatedSale = await Sale.findById(sale._id)
-      .populate("product", "name price image")
-      .populate("seller", "username firstName lastName");
+      .populate("productId", "name price image")
+      .populate("sellerId", "username firstName lastName");
 
     res.status(201).json({ sale: populatedSale });
   } catch (error) {
@@ -82,21 +83,21 @@ router.get("/", authenticate, async (req, res) => {
 
     // Sellers can only see their own sales
     if (req.user.role === "seller") {
-      query.seller = req.user._id;
+      query.sellerId = req.user._id;
     }
 
     const { startDate, endDate } = req.query;
     if (startDate && endDate) {
-      query.saleDate = {
+      query.timestamp = {
         $gte: new Date(startDate),
         $lte: new Date(endDate),
       };
     }
 
     const sales = await Sale.find(query)
-      .populate("seller", "username firstName lastName")
-      .populate("product", "name price image")
-      .sort({ saleDate: -1 });
+      .populate("sellerId", "username firstName lastName")
+      .populate("productId", "name price image")
+      .sort({ timestamp: -1 });
 
     res.json({ sales });
   } catch (error) {
@@ -108,8 +109,8 @@ router.get("/", authenticate, async (req, res) => {
 router.get("/:id", authenticate, async (req, res) => {
   try {
     const sale = await Sale.findById(req.params.id)
-      .populate("seller", "username firstName lastName")
-      .populate("product", "name price image");
+      .populate("sellerId", "username firstName lastName")
+      .populate("productId", "name price image");
 
     if (!sale) {
       return res.status(404).json({ error: "Sale not found" });
@@ -118,7 +119,7 @@ router.get("/:id", authenticate, async (req, res) => {
     // Sellers can only see their own sales
     if (
       req.user.role === "seller" &&
-      sale.seller._id.toString() !== req.user._id.toString()
+      sale.sellerId._id.toString() !== req.user._id.toString()
     ) {
       return res.status(403).json({ error: "Access denied" });
     }

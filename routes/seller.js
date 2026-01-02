@@ -5,11 +5,11 @@ const Product = require("../models/Product");
 const Sale = require("../models/Sale");
 const { authenticate, isSeller } = require("../middleware/auth");
 
-// All seller routes require authentication and seller role
+// All sellerId routes require authentication and sellerId role
 router.use(authenticate);
 router.use(isSeller);
 
-// Get seller's assigned products
+// Get sellerId's assigned products
 router.get("/products", async (req, res) => {
   try {
     const user = await User.findById(req.user._id).populate("assignedProducts");
@@ -19,22 +19,22 @@ router.get("/products", async (req, res) => {
   }
 });
 
-// Get seller's sales
+// Get sellerId's sales
 router.get("/sales", async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
-    const query = { seller: req.user._id };
+    const query = { sellerId: req.user._id };
 
     if (startDate && endDate) {
-      query.saleDate = {
+      query.timestamp = {
         $gte: new Date(startDate),
         $lte: new Date(endDate),
       };
     }
 
     const sales = await Sale.find(query)
-      .populate("product", "name price image")
-      .sort({ saleDate: -1 });
+      .populate("productId", "name price image")
+      .sort({ timestamp: -1 });
 
     res.json({ sales });
   } catch (error) {
@@ -42,7 +42,7 @@ router.get("/sales", async (req, res) => {
   }
 });
 
-// Get seller's reports
+// Get sellerId's reports
 router.get("/reports", async (req, res) => {
   try {
     const { year, month } = req.query;
@@ -61,11 +61,11 @@ router.get("/reports", async (req, res) => {
     );
 
     const sales = await Sale.find({
-      seller: req.user._id,
-      saleDate: { $gte: startDate, $lte: endDate },
+      sellerId: req.user._id,
+      timestamp: { $gte: startDate, $lte: endDate },
     })
-      .populate("product", "name price")
-      .sort({ saleDate: -1 });
+      .populate("productId", "name price")
+      .sort({ timestamp: -1 });
 
     const totalSales = sales.length;
     const totalRevenue = sales.reduce((sum, sale) => sum + sale.totalAmount, 0);

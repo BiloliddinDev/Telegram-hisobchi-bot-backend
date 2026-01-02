@@ -1,12 +1,12 @@
 const mongoose = require("mongoose");
 
 const saleSchema = new mongoose.Schema({
-  seller: {
+  sellerId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "User",
     required: true,
   },
-  product: {
+  productId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "Product",
     required: true,
@@ -38,7 +38,7 @@ const saleSchema = new mongoose.Schema({
     type: String,
     default: "",
   },
-  saleDate: {
+  timestamp: {
     type: Date,
     default: Date.now,
   },

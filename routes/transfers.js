@@ -12,8 +12,8 @@ router.use(isAdmin);
 router.get("/", async (req, res) => {
   try {
     const transfers = await Transfer.find()
-      .populate("seller", "username firstName lastName")
-      .populate("product", "name sku")
+      .populate("sellerId", "username firstName lastName")
+      .populate("productId", "name sku")
       .sort({ createdAt: -1 });
     res.json({ transfers });
   } catch (error) {
@@ -39,28 +39,28 @@ router.post("/", async (req, res) => {
         throw new Error(`Mahsulot topilmadi: ${item.productId}`);
       }
 
-      if (product.stock < item.quantity) {
+      if (product.count < item.quantity) {
         throw new Error(`Omborda yetarli mahsulot yo'q: ${product.name}`);
       }
 
-      // Update product stock
-      product.stock -= item.quantity;
+      // Update productId count
+      product.count -= item.quantity;
 
-      // Update seller stock for this product
+      // Update sellerId count for this productId
       const sellerStockIndex = product.sellerStocks.findIndex(
-        (s) => s.seller.toString() === sellerId
+        (s) => s.sellerId.toString() === sellerId
       );
 
       if (sellerStockIndex > -1) {
         product.sellerStocks[sellerStockIndex].quantity += item.quantity;
       } else {
         product.sellerStocks.push({
-          seller: sellerId,
+          sellerId: sellerId,
           quantity: item.quantity,
         });
       }
 
-      // Add product to seller's assigned products if not already there
+      // Add productId to sellerId's assigned products if not already there
       if (!seller.assignedProducts.includes(product._id)) {
         seller.assignedProducts.push(product._id);
       }
@@ -69,8 +69,8 @@ router.post("/", async (req, res) => {
 
       // Create transfer record
       const transfer = await Transfer.create({
-        seller: sellerId,
-        product: product._id,
+        sellerId: sellerId,
+        productId: product._id,
         quantity: item.quantity,
         type: "transfer",
       });
@@ -98,23 +98,23 @@ router.put("/:id", async (req, res) => {
       return res.status(400).json({ error: "Bekor qilingan transferni tahrirlab bo'lmaydi" });
     }
 
-    const product = await Product.findById(transfer.product);
+    const product = await Product.findById(transfer.productId);
     const diff = quantity - transfer.quantity;
 
     if (diff > 0) {
       // Oshirilyapti, omborda borligini tekshirish
-      if (product.stock < diff) {
+      if (product.count < diff) {
         return res.status(400).json({ error: "Omborda yetarli mahsulot yo'q" });
       }
-      product.stock -= diff;
+      product.count -= diff;
     } else {
       // Kamaytiryapti, omborga qaytadi
-      product.stock += Math.abs(diff);
+      product.count += Math.abs(diff);
     }
 
     // Sotuvchi stokini yangilash
     const sellerStockIndex = product.sellerStocks.findIndex(
-      (s) => s.seller.toString() === transfer.seller.toString()
+      (s) => s.sellerId.toString() === transfer.sellerId.toString()
     );
 
     if (sellerStockIndex > -1) {
@@ -146,9 +146,9 @@ router.post("/:id/return", async (req, res) => {
       return res.status(400).json({ error: "Ushbu transferni qaytarib bo'lmaydi" });
     }
 
-    const product = await Product.findById(transfer.product);
+    const product = await Product.findById(transfer.productId);
     const sellerStockIndex = product.sellerStocks.findIndex(
-      (s) => s.seller.toString() === transfer.seller.toString()
+      (s) => s.sellerId.toString() === transfer.sellerId.toString()
     );
 
     if (sellerStockIndex === -1 || product.sellerStocks[sellerStockIndex].quantity < transfer.quantity) {
@@ -156,7 +156,7 @@ router.post("/:id/return", async (req, res) => {
     }
 
     // Omborga qaytarish
-    product.stock += transfer.quantity;
+    product.count += transfer.quantity;
     product.sellerStocks[sellerStockIndex].quantity -= transfer.quantity;
 
     await product.save();
@@ -164,8 +164,8 @@ router.post("/:id/return", async (req, res) => {
     // Yangi qaytarish recordini yaratish yoki statusini o'zgartirish
     // Foydalanuvchi "Qaytarilganlar (Return) - To'q sariq" dedi, demak bu status emas, record turi bo'lishi kerak
     await Transfer.create({
-      seller: transfer.seller,
-      product: transfer.product,
+      sellerId: transfer.sellerId,
+      productId: transfer.productId,
       quantity: transfer.quantity,
       type: "return",
     });

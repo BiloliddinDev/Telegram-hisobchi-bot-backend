@@ -2,12 +2,12 @@ const mongoose = require("mongoose");
 
 const transferSchema = new mongoose.Schema(
   {
-    seller: {
+    sellerId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
     },
-    product: {
+    productId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Product",
       required: true,
