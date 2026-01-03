@@ -5,6 +5,7 @@ const Product = require("../models/Product");
 const Sale = require("../models/Sale");
 const { authenticate, isAdmin } = require("../middleware/auth");
 const { validateSeller } = require("../middleware/validation");
+const MonthlyReportDTO = require("../dto/MonthlyReportDTO");
 
 // All admin routes require authentication and admin role
 router.use(authenticate);
@@ -31,7 +32,9 @@ router.post("/sellers", validateSeller, async (req, res) => {
 
     const existingUser = await User.findOne({ phoneNumber });
     if (existingUser) {
-      return res.status(400).json({ error: "Ushbu telefon raqamli foydalanuvchi allaqachon mavjud" });
+      return res.status(400).json({
+        error: "Ushbu telefon raqamli foydalanuvchi allaqachon mavjud",
+      });
     }
 
     const seller = await User.create({
@@ -52,11 +55,12 @@ router.post("/sellers", validateSeller, async (req, res) => {
 // Update seller
 router.put("/sellers/:id", async (req, res) => {
   try {
-    const { username, firstName, lastName, phoneNumber, avatarUrl, isActive } = req.body;
+    const { username, firstName, lastName, phoneNumber, avatarUrl, isActive } =
+      req.body;
     const seller = await User.findByIdAndUpdate(
       req.params.id,
       { username, firstName, lastName, phoneNumber, avatarUrl, isActive },
-      { new: true }
+      { new: true },
     ).select("-__v");
 
     if (!seller || seller.role !== "seller") {
@@ -115,22 +119,22 @@ router.post("/sellers/:sellerId/products/:productId", async (req, res) => {
     if (!product.assignedSellers.includes(seller._id)) {
       product.assignedSellers.push(seller._id);
     }
-    
+
     // Reduce count if quantity provided
     if (assignQuantity > 0) {
       product.count -= assignQuantity;
-      
+
       // Update seller's count for this productId
       const sellerStockIndex = product.sellerStocks.findIndex(
-        (s) => s.sellerId.toString() === seller._id.toString()
+        (s) => s.sellerId.toString() === seller._id.toString(),
       );
-      
+
       if (sellerStockIndex > -1) {
         product.sellerStocks[sellerStockIndex].quantity += assignQuantity;
       } else {
         product.sellerStocks.push({
           sellerId: seller._id,
-          quantity: assignQuantity
+          quantity: assignQuantity,
         });
       }
     }
@@ -157,12 +161,12 @@ router.delete("/sellers/:sellerId/products/:productId", async (req, res) => {
     }
 
     seller.assignedProducts = seller.assignedProducts.filter(
-      (id) => id.toString() !== product._id.toString()
+      (id) => id.toString() !== product._id.toString(),
     );
     await seller.save();
 
     product.assignedSellers = product.assignedSellers.filter(
-      (id) => id.toString() !== seller._id.toString()
+      (id) => id.toString() !== seller._id.toString(),
     );
     await product.save();
 
@@ -179,7 +183,7 @@ router.get("/reports/monthly", async (req, res) => {
     const startDate = new Date(
       year || new Date().getFullYear(),
       (month || new Date().getMonth()) - 1,
-      1
+      1,
     );
     const endDate = new Date(
       year || new Date().getFullYear(),
@@ -187,7 +191,7 @@ router.get("/reports/monthly", async (req, res) => {
       0,
       23,
       59,
-      59
+      59,
     );
 
     const sales = await Sale.find({
@@ -197,60 +201,13 @@ router.get("/reports/monthly", async (req, res) => {
       .populate("productId", "name price")
       .sort({ timestamp: -1 });
 
-    // Calculate statistics
-    const totalSales = sales.length;
-    const totalRevenue = sales.reduce((sum, sale) => sum + sale.totalAmount, 0);
-    const totalQuantity = sales.reduce((sum, sale) => sum + sale.quantity, 0);
+    // Use DTO to format response
+    const reportDTO = MonthlyReportDTO.create(sales, startDate, endDate);
 
-    // Sales by sellerId
-    const salesBySeller = {};
-    sales.forEach((sale) => {
-      const sellerId = sale.sellerId._id.toString();
-      if (!salesBySeller[sellerId]) {
-        salesBySeller[sellerId] = {
-          sellerId: sale.sellerId,
-          totalSales: 0,
-          totalRevenue: 0,
-          totalQuantity: 0,
-        };
-      }
-      salesBySeller[sellerId].totalSales += 1;
-      salesBySeller[sellerId].totalRevenue += sale.totalAmount;
-      salesBySeller[sellerId].totalQuantity += sale.quantity;
-    });
-
-    // Sales by productId
-    const salesByProduct = {};
-    sales.forEach((sale) => {
-      const productId = sale.productId._id.toString();
-      if (!salesByProduct[productId]) {
-        salesByProduct[productId] = {
-          productId: sale.productId,
-          totalSales: 0,
-          totalRevenue: 0,
-          totalQuantity: 0,
-        };
-      }
-      salesByProduct[productId].totalSales += 1;
-      salesByProduct[productId].totalRevenue += sale.totalAmount;
-      salesByProduct[productId].totalQuantity += sale.quantity;
-    });
-
-    res.json({
-      period: { startDate, endDate },
-      summary: {
-        totalSales,
-        totalRevenue,
-        totalQuantity,
-      },
-      salesBySeller: Object.values(salesBySeller),
-      salesByProduct: Object.values(salesByProduct),
-      sales,
-    });
+    res.json(reportDTO.toJSON());
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
 module.exports = router;
-

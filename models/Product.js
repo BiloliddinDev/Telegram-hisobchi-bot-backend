@@ -20,8 +20,9 @@ const productSchema = new mongoose.Schema({
     min: 0,
   },
   category: {
-    type: String,
-    default: "general",
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Category",
+    required: true,
   },
   sku: {
     type: String,
@@ -78,4 +79,3 @@ productSchema.pre("save", function (next) {
 });
 
 module.exports = mongoose.model("Product", productSchema);
-
