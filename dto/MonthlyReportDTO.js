@@ -5,7 +5,7 @@ class MonthlyReportDTO {
       endDate,
       year: startDate.getFullYear(),
       month: startDate.getMonth() + 1,
-      monthName: startDate.toLocaleString('en-US', { month: 'long' })
+      monthName: startDate.toLocaleString("en-US", { month: "long" }),
     };
 
     this.summary = this._calculateSummary(sales);
@@ -19,20 +19,26 @@ class MonthlyReportDTO {
     const uniqueSellers = new Set();
     const uniqueProducts = new Set();
 
-    sales.forEach(sale => {
+    sales.forEach((sale) => {
       if (sale.sellerId?._id) uniqueSellers.add(sale.sellerId._id.toString());
-      if (sale.productId?._id) uniqueProducts.add(sale.productId._id.toString());
+      if (sale.productId?._id)
+        uniqueProducts.add(sale.productId._id.toString());
     });
 
     return {
       totalSales: sales.length,
-      totalRevenue: this._formatCurrency(sales.reduce((sum, sale) => sum + (sale.totalAmount || 0), 0)),
+      totalRevenue: sales.reduce(
+        (sum, sale) => sum + (sale.totalAmount || 0),
+        0,
+      ),
       totalQuantity: sales.reduce((sum, sale) => sum + (sale.quantity || 0), 0),
       totalSellers: uniqueSellers.size,
       totalProducts: uniqueProducts.size,
-      averageSaleAmount: sales.length > 0
-        ? this._formatCurrency(sales.reduce((sum, sale) => sum + (sale.totalAmount || 0), 0) / sales.length)
-        : 0
+      averageSaleAmount:
+        sales.length > 0
+          ? sales.reduce((sum, sale) => sum + (sale.totalAmount || 0), 0) /
+            sales.length
+          : 0,
     };
   }
 
@@ -50,14 +56,15 @@ class MonthlyReportDTO {
             username: sale.sellerId.username,
             firstName: sale.sellerId.firstName,
             lastName: sale.sellerId.lastName,
-            fullName: `${sale.sellerId.firstName || ''} ${sale.sellerId.lastName || ''}`.trim()
+            fullName:
+              `${sale.sellerId.firstName || ""} ${sale.sellerId.lastName || ""}`.trim(),
           },
           stats: {
             totalSales: 0,
             totalRevenue: 0,
             totalQuantity: 0,
-            averageSaleAmount: 0
-          }
+            averageSaleAmount: 0,
+          },
         };
       }
 
@@ -67,17 +74,17 @@ class MonthlyReportDTO {
     });
 
     // Calculate averages and format currency
-    Object.values(salesBySeller).forEach(sellerData => {
+    Object.values(salesBySeller).forEach((sellerData) => {
       const stats = sellerData.stats;
-      stats.averageSaleAmount = stats.totalSales > 0
-        ? this._formatCurrency(stats.totalRevenue / stats.totalSales)
-        : 0;
-      stats.totalRevenue = this._formatCurrency(stats.totalRevenue);
+      stats.averageSaleAmount =
+        stats.totalSales > 0 ? stats.totalRevenue / stats.totalSales : 0;
+      stats.totalRevenue = stats.totalRevenue;
     });
 
-    return Object.values(salesBySeller).sort((a, b) =>
-      parseFloat(b.stats.totalRevenue.replace(/[^0-9.-]+/g, "")) -
-      parseFloat(a.stats.totalRevenue.replace(/[^0-9.-]+/g, ""))
+    return Object.values(salesBySeller).sort(
+      (a, b) =>
+        parseFloat(b.stats.totalRevenue.replace(/[^0-9.-]+/g, "")) -
+        parseFloat(a.stats.totalRevenue.replace(/[^0-9.-]+/g, "")),
     );
   }
 
@@ -93,14 +100,14 @@ class MonthlyReportDTO {
           product: {
             id: sale.productId._id,
             name: sale.productId.name,
-            price: this._formatCurrency(sale.productId.price || 0)
+            price: sale.productId.price || 0,
           },
           stats: {
             totalSales: 0,
             totalRevenue: 0,
             totalQuantity: 0,
-            averageSaleAmount: 0
-          }
+            averageSaleAmount: 0,
+          },
         };
       }
 
@@ -110,17 +117,17 @@ class MonthlyReportDTO {
     });
 
     // Calculate averages and format currency
-    Object.values(salesByProduct).forEach(productData => {
+    Object.values(salesByProduct).forEach((productData) => {
       const stats = productData.stats;
-      stats.averageSaleAmount = stats.totalSales > 0
-        ? this._formatCurrency(stats.totalRevenue / stats.totalSales)
-        : 0;
-      stats.totalRevenue = this._formatCurrency(stats.totalRevenue);
+      stats.averageSaleAmount =
+        stats.totalSales > 0 ? stats.totalRevenue / stats.totalSales : 0;
+      stats.totalRevenue = stats.totalRevenue;
     });
 
-    return Object.values(salesByProduct).sort((a, b) =>
-      parseFloat(b.stats.totalRevenue.replace(/[^0-9.-]+/g, "")) -
-      parseFloat(a.stats.totalRevenue.replace(/[^0-9.-]+/g, ""))
+    return Object.values(salesByProduct).sort(
+      (a, b) =>
+        parseFloat(b.stats.totalRevenue.replace(/[^0-9.-]+/g, "")) -
+        parseFloat(a.stats.totalRevenue.replace(/[^0-9.-]+/g, "")),
     );
   }
 
@@ -128,7 +135,7 @@ class MonthlyReportDTO {
     const sellerStats = {};
     const productStats = {};
 
-    sales.forEach(sale => {
+    sales.forEach((sale) => {
       // Top sellers by revenue
       if (sale.sellerId?._id) {
         const sellerId = sale.sellerId._id.toString();
@@ -136,7 +143,7 @@ class MonthlyReportDTO {
           sellerStats[sellerId] = {
             seller: sale.sellerId,
             totalRevenue: 0,
-            totalSales: 0
+            totalSales: 0,
           };
         }
         sellerStats[sellerId].totalRevenue += sale.totalAmount || 0;
@@ -150,7 +157,7 @@ class MonthlyReportDTO {
           productStats[productId] = {
             product: sale.productId,
             totalQuantity: 0,
-            totalSales: 0
+            totalSales: 0,
           };
         }
         productStats[productId].totalQuantity += sale.quantity || 0;
@@ -159,10 +166,14 @@ class MonthlyReportDTO {
     });
 
     return {
-      topSellerByRevenue: Object.values(sellerStats)
-        .sort((a, b) => b.totalRevenue - a.totalRevenue)[0] || null,
-      topProductByQuantity: Object.values(productStats)
-        .sort((a, b) => b.totalQuantity - a.totalQuantity)[0] || null
+      topSellerByRevenue:
+        Object.values(sellerStats).sort(
+          (a, b) => b.totalRevenue - a.totalRevenue,
+        )[0] || null,
+      topProductByQuantity:
+        Object.values(productStats).sort(
+          (a, b) => b.totalQuantity - a.totalQuantity,
+        )[0] || null,
     };
   }
 
@@ -172,19 +183,19 @@ class MonthlyReportDTO {
 
     // Initialize all days in the period
     while (currentDate <= endDate) {
-      const dateKey = currentDate.toISOString().split('T')[0];
+      const dateKey = currentDate.toISOString().split("T")[0];
       dailySales[dateKey] = {
         date: dateKey,
         totalSales: 0,
         totalRevenue: 0,
-        totalQuantity: 0
+        totalQuantity: 0,
       };
       currentDate.setDate(currentDate.getDate() + 1);
     }
 
     // Populate with actual sales data
-    sales.forEach(sale => {
-      const saleDate = new Date(sale.timestamp).toISOString().split('T')[0];
+    sales.forEach((sale) => {
+      const saleDate = new Date(sale.timestamp).toISOString().split("T")[0];
       if (dailySales[saleDate]) {
         dailySales[saleDate].totalSales += 1;
         dailySales[saleDate].totalRevenue += sale.totalAmount || 0;
@@ -193,20 +204,13 @@ class MonthlyReportDTO {
     });
 
     // Format currency for daily sales
-    Object.values(dailySales).forEach(day => {
-      day.totalRevenue = this._formatCurrency(day.totalRevenue);
+    Object.values(dailySales).forEach((day) => {
+      day.totalRevenue = day.totalRevenue;
     });
 
-    return Object.values(dailySales).sort((a, b) => a.date.localeCompare(b.date));
-  }
-
-  _formatCurrency(amount) {
-    return new Intl.NumberFormat('uz-UZ', {
-      style: 'currency',
-      currency: 'UZS',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
-    }).format(amount || 0);
+    return Object.values(dailySales).sort((a, b) =>
+      a.date.localeCompare(b.date),
+    );
   }
 
   // Static method to create DTO from sales data
@@ -222,7 +226,7 @@ class MonthlyReportDTO {
       salesBySeller: this.salesBySeller,
       salesByProduct: this.salesByProduct,
       topPerformers: this.topPerformers,
-      dailySales: this.dailySales
+      dailySales: this.dailySales,
     };
   }
 }
