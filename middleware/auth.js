@@ -3,6 +3,7 @@ const User = require("../models/User");
 const authenticate = async (req, res, next) => {
   try {
     const telegramId = req.headers["x-telegram-id"];
+    console.log(`Incoming ID: [${telegramId}]`);
     const initData = req.headers["x-telegram-init-data"];
 
     if (!telegramId) {
@@ -37,9 +38,9 @@ const authenticate = async (req, res, next) => {
         });
       } else {
         console.log("Unauthorized: User not in DB");
-        return res.status(401).json({ 
-          error: "Siz ro'yxatdan o'tmagansiz", 
-          message: "Iltimos, avval bot orqali ro'yxatdan o'ting." 
+        return res.status(401).json({
+          error: "Siz ro'yxatdan o'tmagansiz",
+          message: "Iltimos, avval bot orqali ro'yxatdan o'ting.",
         });
       }
     } else {
@@ -54,7 +55,10 @@ const authenticate = async (req, res, next) => {
           user.username = telegramUser.username;
           updated = true;
         }
-        if (telegramUser.photo_url && user.avatarUrl !== telegramUser.photo_url) {
+        if (
+          telegramUser.photo_url &&
+          user.avatarUrl !== telegramUser.photo_url
+        ) {
           user.avatarUrl = telegramUser.photo_url;
           updated = true;
         }
@@ -102,4 +106,3 @@ const isSeller = (req, res, next) => {
 };
 
 module.exports = { authenticate, isAdmin, isSeller };
-

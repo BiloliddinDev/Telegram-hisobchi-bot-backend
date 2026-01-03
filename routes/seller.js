@@ -12,6 +12,7 @@ router.use(isSeller);
 // Get sellerId's assigned products
 router.get("/products", async (req, res) => {
   try {
+    console.log("Fetching seller's products: ", req.user._id);
     const user = await User.findById(req.user._id).populate("assignedProducts");
     res.json({ products: user.assignedProducts });
   } catch (error) {
@@ -49,7 +50,7 @@ router.get("/reports", async (req, res) => {
     const startDate = new Date(
       year || new Date().getFullYear(),
       (month || new Date().getMonth()) - 1,
-      1
+      1,
     );
     const endDate = new Date(
       year || new Date().getFullYear(),
@@ -57,7 +58,7 @@ router.get("/reports", async (req, res) => {
       0,
       23,
       59,
-      59
+      59,
     );
 
     const sales = await Sale.find({
@@ -86,4 +87,3 @@ router.get("/reports", async (req, res) => {
 });
 
 module.exports = router;
-
