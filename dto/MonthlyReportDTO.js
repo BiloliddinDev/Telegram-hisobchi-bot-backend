@@ -82,9 +82,7 @@ class MonthlyReportDTO {
     });
 
     return Object.values(salesBySeller).sort(
-      (a, b) =>
-        parseFloat(b.stats.totalRevenue.replace(/[^0-9.-]+/g, "")) -
-        parseFloat(a.stats.totalRevenue.replace(/[^0-9.-]+/g, "")),
+      (a, b) => b.stats.totalRevenue - a.stats.totalRevenue,
     );
   }
 
@@ -125,9 +123,7 @@ class MonthlyReportDTO {
     });
 
     return Object.values(salesByProduct).sort(
-      (a, b) =>
-        parseFloat(b.stats.totalRevenue.replace(/[^0-9.-]+/g, "")) -
-        parseFloat(a.stats.totalRevenue.replace(/[^0-9.-]+/g, "")),
+      (a, b) => b.stats.totalRevenue - a.stats.totalRevenue,
     );
   }
 

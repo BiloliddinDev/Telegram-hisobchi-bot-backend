@@ -18,7 +18,7 @@ router.use(isAdmin);
 router.get("/sellers", async (req, res) => {
   try {
     const sellers = await User.find({ role: "seller" })
-      .populate("assignedProducts", "name price")
+      .populate("assignedProducts", "name price costPrice count")
       .select("-__v")
       .sort({ createdAt: -1 });
 
@@ -76,7 +76,7 @@ router.put("/sellers/:id", async (req, res) => {
   }
 });
 
-// Delete seller
+// Delete seller (Actually make as deleted)
 router.delete("/sellers/:id", async (req, res) => {
   try {
     const seller = await User.findById(req.params.id);
@@ -85,8 +85,9 @@ router.delete("/sellers/:id", async (req, res) => {
       return res.status(404).json({ error: "Seller not found" });
     }
 
-    await User.findByIdAndDelete(req.params.id);
-    res.json({ message: "Seller deleted successfully" });
+    await seller.delete();
+
+    res.json({ message: "Seller inactivated successfully" });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -223,29 +224,36 @@ router.delete("/sellers/:sellerId/products/:productId", async (req, res) => {
 // Get monthly reports
 router.get("/reports/monthly", async (req, res) => {
   try {
-    const { year, month } = req.query;
-    const startDate = new Date(
-      year || new Date().getFullYear(),
-      (month || new Date().getMonth()) - 1,
-      1,
-    );
-    const endDate = new Date(
-      year || new Date().getFullYear(),
-      month || new Date().getMonth(),
-      0,
-      23,
-      59,
-      59,
-    );
+    const { start, end } = req.query;
+
+    console.log(start, end);
+
+    if (!start || !end) {
+      return res.status(400).json({
+        error: "start and end query params are required (YYYY-MM-DD)",
+      });
+    }
+
+    // Parse dates
+    const startDate = new Date(`${start}T00:00:00.000Z`);
+    const endDate = new Date(`${end}T23:59:59.999Z`);
+
+    if (isNaN(startDate) || isNaN(endDate)) {
+      return res.status(400).json({
+        error: "Invalid date format. Use YYYY-MM-DD",
+      });
+    }
 
     const sales = await Sale.find({
-      timestamp: { $gte: startDate, $lte: endDate },
+      timestamp: {
+        $gte: startDate,
+        $lte: endDate,
+      },
     })
       .populate("sellerId", "username firstName lastName")
       .populate("productId", "name price")
       .sort({ timestamp: -1 });
 
-    // Use DTO to format response
     const reportDTO = MonthlyReportDTO.create(sales, startDate, endDate);
 
     res.json(reportDTO.toJSON());

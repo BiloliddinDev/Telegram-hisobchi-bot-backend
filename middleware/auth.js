@@ -44,6 +44,11 @@ const authenticate = async (req, res, next) => {
         });
       }
     } else {
+      if (!user.isActive || user.isDeleted) {
+        return res
+          .status(403)
+          .json({ error: "Access denied. User is inactive." });
+      }
       // Update existing user info from Telegram if available
       let updated = false;
       if (telegramUser) {
