@@ -37,18 +37,6 @@ const productSchema = new mongoose.Schema({
     default: 0,
     min: 0,
   },
-  sellerStocks: [
-    {
-      sellerId: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "User",
-      },
-      quantity: {
-        type: Number,
-        default: 0,
-      },
-    },
-  ],
   image: {
     type: String,
     default: "",

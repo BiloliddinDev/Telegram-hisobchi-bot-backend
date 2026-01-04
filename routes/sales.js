@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const Sale = require("../models/Sale");
 const Product = require("../models/Product");
+const SellerStock = require("../models/SellerStock");
 const { authenticate } = require("../middleware/auth");
 const { validateSale } = require("../middleware/validation");
 
@@ -19,7 +20,7 @@ router.post("/", authenticate, validateSale, async (req, res) => {
     // Check if seller has access to this productId
     if (req.user.role === "seller") {
       const hasAccess = req.user.assignedProducts.some(
-        (id) => id.toString() === productId
+        (id) => id.toString() === productId,
       );
       if (!hasAccess) {
         return res
@@ -30,8 +31,9 @@ router.post("/", authenticate, validateSale, async (req, res) => {
 
     // Check count
     if (req.user.role === "seller") {
-      const sellerStock = product.sellerStocks.find(
-        (s) => s.sellerId.toString() === req.user._id.toString()
+      const sellerStock = await SellerStock.findBySellerAndProduct(
+        req.user._id,
+        productId,
       );
       if (!sellerStock || sellerStock.quantity < quantity) {
         return res.status(400).json({ error: "Sizda yetarli mahsulot yo'q" });
@@ -53,13 +55,15 @@ router.post("/", authenticate, validateSale, async (req, res) => {
       notes,
     });
 
-    // Update stocks using findByIdAndUpdate and $inc
+    // Update stocks
     if (req.user.role === "seller") {
-      await Product.findByIdAndUpdate(
+      const sellerStock = await SellerStock.findBySellerAndProduct(
+        req.user._id,
         productId,
-        { $inc: { "sellerStocks.$[elem].quantity": -quantity } },
-        { arrayFilters: [{ "elem.sellerId": req.user._id }] }
       );
+      if (sellerStock) {
+        await sellerStock.updateQuantity(-quantity);
+      }
     } else {
       await Product.findByIdAndUpdate(productId, {
         $inc: { count: -quantity },
@@ -131,4 +135,3 @@ router.get("/:id", authenticate, async (req, res) => {
 });
 
 module.exports = router;
-

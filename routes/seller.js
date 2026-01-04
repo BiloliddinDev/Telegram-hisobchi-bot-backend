@@ -3,6 +3,7 @@ const router = express.Router();
 const User = require("../models/User");
 const Product = require("../models/Product");
 const Sale = require("../models/Sale");
+const SellerStock = require("../models/SellerStock");
 const { authenticate, isSeller } = require("../middleware/auth");
 
 // All sellerId routes require authentication and sellerId role
@@ -15,6 +16,59 @@ router.get("/products", async (req, res) => {
     console.log("Fetching seller's products: ", req.user._id);
     const user = await User.findById(req.user._id).populate("assignedProducts");
     res.json({ products: user.assignedProducts });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get seller's stock inventory
+router.get("/stocks", async (req, res) => {
+  try {
+    const sellerStocks = await SellerStock.findBySeller(req.user._id);
+
+    // Calculate total stock value
+    const totalStockValue = sellerStocks.reduce((total, stock) => {
+      return total + stock.quantity * (stock.product?.costPrice || 0);
+    }, 0);
+
+    const totalProducts = sellerStocks.length;
+    const totalQuantity = sellerStocks.reduce(
+      (total, stock) => total + stock.quantity,
+      0,
+    );
+
+    res.json({
+      stocks: sellerStocks,
+      summary: {
+        totalProducts,
+        totalQuantity,
+        totalStockValue,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get stock for a specific product
+router.get("/stocks/product/:productId", async (req, res) => {
+  try {
+    const { productId } = req.params;
+
+    const stock = await SellerStock.findBySellerAndProduct(
+      req.user._id,
+      productId,
+    );
+
+    if (!stock) {
+      return res
+        .status(404)
+        .json({ error: "Stock not found for this product" });
+    }
+
+    await stock.populate("product", "name sku price costPrice image");
+
+    res.json({ stock });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

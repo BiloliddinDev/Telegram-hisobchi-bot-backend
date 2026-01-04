@@ -6,12 +6,16 @@ const options = {
     openapi: "3.0.0",
     info: {
       title: "Telegram Hisobchi Bot API",
-      version: "1.0.0",
+      version: "2.0.0",
       description:
-        "API documentation for Telegram Hisobchi Bot Backend - Sales Management System",
+        "API documentation for Telegram Hisobchi Bot Backend - Advanced Sales Management System with SellerStock Management",
       contact: {
         name: "API Support",
         email: "support@example.com",
+      },
+      license: {
+        name: "MIT",
+        url: "https://opensource.org/licenses/MIT",
       },
     },
     servers: [
@@ -149,21 +153,40 @@ const options = {
               },
               description: "Sellers assigned to this product",
             },
-            sellerStocks: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  sellerId: {
-                    type: "string",
-                    description: "Seller ID",
-                  },
-                  quantity: {
-                    type: "number",
-                    description: "Stock quantity with seller",
-                  },
-                },
-              },
+          },
+        },
+        SellerStock: {
+          type: "object",
+          properties: {
+            _id: {
+              type: "string",
+              description: "SellerStock ID",
+            },
+            seller: {
+              $ref: "#/components/schemas/User",
+            },
+            product: {
+              $ref: "#/components/schemas/Product",
+            },
+            quantity: {
+              type: "number",
+              description: "Stock quantity with seller",
+              minimum: 0,
+            },
+            lastTransferDate: {
+              type: "string",
+              format: "date-time",
+              description: "Date of last transfer",
+            },
+            createdAt: {
+              type: "string",
+              format: "date-time",
+              description: "Creation date",
+            },
+            updatedAt: {
+              type: "string",
+              format: "date-time",
+              description: "Last update date",
             },
           },
         },
@@ -501,7 +524,11 @@ const options = {
       },
     ],
   },
-  apis: ["./routes/*.js", "./swagger/paths/*.js"],
+  apis: [
+    "./routes/*.js",
+    "./swagger/paths/*.js",
+    "./swagger/paths/missing-endpoints.js",
+  ],
 };
 
 const specs = swaggerJsdoc(options);

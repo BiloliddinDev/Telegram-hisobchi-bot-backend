@@ -1,12 +1,17 @@
 require("dotenv").config();
 const app = require("./app");
 const connectDB = require("./config/db");
+const initializeAdmin = require("./utils/initAdmin");
 
 const PORT = process.env.PORT || 5000;
 const NODE_ENV = (process.env.NODE_ENV || "development").trim();
 
 (async () => {
   await connectDB();
+
+  // Initialize admin user
+  await initializeAdmin();
+
   // Load Telegram bot only in production
   if (NODE_ENV === "production") {
     console.log("🤖 Loading Telegram bot for production environment...");

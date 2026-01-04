@@ -15,7 +15,6 @@ const normalizePhone = (phone) => {
 bot.onText(/\/start/, async (msg) => {
   const chatId = msg.chat.id;
   try {
-    await connectDB();
     const user = await User.findOne({ telegramId: chatId.toString() });
 
     if (user) {
@@ -49,7 +48,6 @@ bot.onText(/\/start/, async (msg) => {
 bot.on("contact", async (msg) => {
   const chatId = msg.chat.id;
   try {
-    await connectDB();
     if (msg.contact.user_id !== msg.from.id) {
       return bot.sendMessage(chatId, "Faqat o'z raqamingizni yuboring.");
     }
