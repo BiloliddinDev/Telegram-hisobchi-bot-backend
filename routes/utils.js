@@ -1,22 +1,25 @@
-import User from "../models/User.js";
-import Product from "../models/Product.js";
+const User = require("../models/User");
+const Product = require("../models/Product");
 
-export async function manageAssignmentSellerAndProduct(
-  sellerId,
-  productId,
+async function manageAssignmentSellerAndProduct(
+  seller,
+  product,
   isSaveSeller = true,
   isSaveProduct = true,
   toAssign = true,
 ) {
-  const seller = await User.findById(sellerId);
-  const product = await Product.findById(productId);
+  const validSeller = seller;
+  const validProduct = product;
 
-  if (!seller || !product) {
+  if (typeof seller === "string") seller = await User.findById(seller);
+  if (typeof product === "string") product = await Product.findById(product);
+
+  if (!validSeller || !validProduct) {
     throw new Error("Seller or product not found");
   }
 
   const updateArray = (array, item, shouldAdd) => {
-    const exists = array.includes(item);
+    const exists = array.some((id) => id.toString() === item.toString());
     if (shouldAdd && !exists) {
       array.push(item);
       return true;
@@ -29,17 +32,21 @@ export async function manageAssignmentSellerAndProduct(
 
   // Update seller's assigned products
   if (
-    updateArray(seller.assignedProducts, product._id, toAssign) &&
+    updateArray(validSeller.assignedProducts, product._id, toAssign) &&
     isSaveSeller
   ) {
-    await seller.save();
+    await validSeller.save();
   }
 
   // Update product's assigned sellers
   if (
-    updateArray(product.assignedSellers, seller._id, toAssign) &&
+    updateArray(validProduct.assignedSellers, seller._id, toAssign) &&
     isSaveProduct
   ) {
-    await product.save();
+    await validProduct.save();
   }
 }
+
+module.exports = {
+  manageAssignmentSellerAndProduct,
+};

@@ -30,6 +30,135 @@
 
 /**
  * @swagger
+ * /api/admin/sellers:
+ *   post:
+ *     tags:
+ *       - Admin - User Management
+ *     summary: Create new seller
+ *     description: Creates a new seller account in the system
+ *     security:
+ *       - TelegramAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - firstName
+ *               - lastName
+ *               - phoneNumber
+ *             properties:
+ *               telegramId:
+ *                 type: string
+ *                 description: Telegram user ID (optional)
+ *                 example: "1234567890"
+ *               username:
+ *                 type: string
+ *                 description: Username
+ *                 example: "john_doe"
+ *               firstName:
+ *                 type: string
+ *                 description: First name
+ *                 example: "John"
+ *               lastName:
+ *                 type: string
+ *                 description: Last name
+ *                 example: "Doe"
+ *               phoneNumber:
+ *                 type: string
+ *                 description: Phone number (must be unique)
+ *                 example: "+998901234567"
+ *     responses:
+ *       201:
+ *         description: Seller created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 seller:
+ *                   $ref: '#/components/schemas/User'
+ *       400:
+ *         description: Phone number already exists
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Admin access required
+ *       500:
+ *         description: Server error
+ */
+
+/**
+ * @swagger
+ * /api/admin/sellers/{id}:
+ *   put:
+ *     tags:
+ *       - Admin - User Management
+ *     summary: Update seller information
+ *     description: Updates an existing seller's information
+ *     security:
+ *       - TelegramAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Seller ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               username:
+ *                 type: string
+ *                 description: Username
+ *                 example: "john_doe_updated"
+ *               firstName:
+ *                 type: string
+ *                 description: First name
+ *                 example: "John"
+ *               lastName:
+ *                 type: string
+ *                 description: Last name
+ *                 example: "Doe"
+ *               phoneNumber:
+ *                 type: string
+ *                 description: Phone number
+ *                 example: "+998901234567"
+ *               avatarUrl:
+ *                 type: string
+ *                 description: Avatar image URL
+ *                 example: "https://example.com/avatar.jpg"
+ *               isActive:
+ *                 type: boolean
+ *                 description: Active status
+ *                 example: true
+ *     responses:
+ *       200:
+ *         description: Seller updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 seller:
+ *                   $ref: '#/components/schemas/User'
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Admin access required
+ *       404:
+ *         description: Seller not found
+ *       500:
+ *         description: Server error
+ */
+
+/**
+ * @swagger
  * /api/admin/sellers/{sellerId}/products/{productId}:
  *   post:
  *     tags:
@@ -358,226 +487,6 @@
  */
 
 /**
- * @swagger
- * /api/admin/transfers:
- *   get:
- *     tags:
- *       - Admin - Transfer Management
- *     summary: Get transfer history
- *     description: Returns all transfer records sorted by creation date (newest first)
- *     security:
- *       - TelegramAuth: []
- *     responses:
- *       200:
- *         description: Transfers retrieved successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 transfers:
- *                   type: array
- *                   items:
- *                     $ref: '#/components/schemas/Transfer'
- *   post:
- *     tags:
- *       - Admin - Transfer Management
- *     summary: Create new transfer(s)
- *     description: Creates new inventory transfers from warehouse to seller (supports bulk transfers)
- *     security:
- *       - TelegramAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - sellerId
- *               - items
- *             properties:
- *               sellerId:
- *                 type: string
- *                 description: Target seller ID
- *                 example: "64f1a2b3c4d5e6f7g8h9i0j1"
- *               items:
- *                 type: array
- *                 description: List of products to transfer
- *                 items:
- *                   type: object
- *                   required:
- *                     - productId
- *                     - quantity
- *                   properties:
- *                     productId:
- *                       type: string
- *                       description: Product ID
- *                       example: "64f1a2b3c4d5e6f7g8h9i0j2"
- *                     quantity:
- *                       type: number
- *                       minimum: 1
- *                       description: Quantity to transfer
- *                       example: 15
- *           example:
- *             sellerId: "64f1a2b3c4d5e6f7g8h9i0j1"
- *             items:
- *               - productId: "64f1a2b3c4d5e6f7g8h9i0j2"
- *                 quantity: 15
- *               - productId: "64f1a2b3c4d5e6f7g8h9i0j3"
- *                 quantity: 8
- *     responses:
- *       201:
- *         description: Transfers created successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message:
- *                   type: string
- *                   example: "Muvaffaqiyatli biriktirildi"
- *                 transfers:
- *                   type: array
- *                   items:
- *                     $ref: '#/components/schemas/Transfer'
- *       400:
- *         description: Validation error or insufficient warehouse stock
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
- *                   example: "Omborda yetarli mahsulot yo'q: iPhone 15"
- *       404:
- *         description: Seller or product not found
- */
-
-/**
- * @swagger
- * /api/admin/transfers/{id}/return:
- *   post:
- *     tags:
- *       - Admin - Transfer Management
- *     summary: Return transfer to warehouse
- *     description: Returns products from seller back to warehouse (supports partial returns)
- *     security:
- *       - TelegramAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *         description: Original transfer ID
- *     requestBody:
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               quantity:
- *                 type: number
- *                 minimum: 1
- *                 description: Quantity to return (optional, defaults to full return)
- *                 example: 10
- *     responses:
- *       200:
- *         description: Products returned successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message:
- *                   type: string
- *                   example: "Stock returned to warehouse"
- *                 originalTransfer:
- *                   $ref: '#/components/schemas/Transfer'
- *                 returnTransfer:
- *                   $ref: '#/components/schemas/Transfer'
- *                 returnedQuantity:
- *                   type: number
- *                   description: Quantity returned
- *                   example: 10
- *       400:
- *         description: Invalid return request or insufficient seller stock
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
- *                   example: "Seller doesn't have enough stock to return"
- *       404:
- *         description: Transfer not found
- */
-
-/**
- * @swagger
- * /api/admin/analytics:
- *   get:
- *     tags:
- *       - Admin - Analytics
- *     summary: Get inventory analytics
- *     description: Returns comprehensive inventory and sales analytics including stock distribution and values
- *     security:
- *       - TelegramAuth: []
- *     responses:
- *       200:
- *         description: Analytics data retrieved successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 summary:
- *                   type: object
- *                   properties:
- *                     totalInventoryValue:
- *                       type: number
- *                       description: Total value of all inventory
- *                       example: 125000
- *                     warehouseStockValue:
- *                       type: number
- *                       description: Value of warehouse stock
- *                       example: 75000
- *                     sellerStockValue:
- *                       type: number
- *                       description: Total value of stock with sellers
- *                       example: 50000
- *                 sellers:
- *                   type: array
- *                   items:
- *                     type: object
- *                     properties:
- *                       _id:
- *                         type: string
- *                         description: Seller ID
- *                       username:
- *                         type: string
- *                         description: Seller username
- *                       firstName:
- *                         type: string
- *                         description: Seller first name
- *                       lastName:
- *                         type: string
- *                         description: Seller last name
- *                       telegramId:
- *                         type: string
- *                         description: Telegram ID
- *                       totalValue:
- *                         type: number
- *                         description: Total stock value with this seller
- *                       productCount:
- *                         type: number
- *                         description: Total product count with this seller
- *                 sales:
- *                   type: array
- *                   items:
- *                     $ref: '#/components/schemas/Sale'
  */
 
 /**
@@ -616,6 +525,82 @@
  *         description: Authentication required
  *       403:
  *         description: Admin access required
+ *       500:
+ *         description: Server error
+ */
+
+/**
+ * @swagger
+ * /api/admin/sellers/{id}:
+ *   delete:
+ *     tags:
+ *       - Admin - User Management
+ *     summary: Delete seller (Admin only)
+ *     description: Deletes a seller from the system
+ *     security:
+ *       - TelegramAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Seller ID
+ *     responses:
+ *       200:
+ *         description: Seller deleted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Seller deleted successfully"
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Admin access required
+ *       404:
+ *         description: Seller not found
+ *       500:
+ *         description: Server error
+ */
+
+/**
+ * @swagger
+ * /api/admin/seller-stocks/{stockId}:
+ *   delete:
+ *     tags:
+ *       - Admin - Stock Management
+ *     summary: Delete seller stock record (Admin only)
+ *     description: Deletes a seller stock record and automatically manages seller/product assignments if this was the last stock record for that product
+ *     security:
+ *       - TelegramAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: stockId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: SellerStock ID to delete
+ *     responses:
+ *       200:
+ *         description: Seller stock deleted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Seller stock deleted successfully"
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Admin access required
+ *       404:
+ *         description: Seller stock not found
  *       500:
  *         description: Server error
  */

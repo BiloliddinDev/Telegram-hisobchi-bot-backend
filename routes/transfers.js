@@ -5,7 +5,7 @@ const Product = require("../models/Product");
 const User = require("../models/User");
 const SellerStock = require("../models/SellerStock");
 const { authenticate, isAdmin } = require("../middleware/auth");
-const { manageAssingmentSellerAndProduct } = require("./utils");
+const { manageAssignmentSellerAndProduct } = require("./utils");
 
 router.use(authenticate);
 router.use(isAdmin);
@@ -47,6 +47,7 @@ router.post("/", async (req, res) => {
 
       // Update productId count
       product.count -= item.quantity;
+      await product.save();
 
       // Update seller stock using SellerStock model
       const existingStock = await SellerStock.findBySellerAndProduct(
@@ -65,9 +66,9 @@ router.post("/", async (req, res) => {
       }
 
       // assign product to seller
-      await manageAssingmentSellerAndProduct(
-        sellerId,
-        product._id,
+      await manageAssignmentSellerAndProduct(
+        seller,
+        product,
         (isSaveSeller = false),
         (isSaveProduct = true),
         (toAssign = true),
