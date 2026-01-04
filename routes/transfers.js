@@ -3,7 +3,9 @@ const router = express.Router();
 const Transfer = require("../models/Transfer");
 const Product = require("../models/Product");
 const User = require("../models/User");
+const SellerStock = require("../models/SellerStock");
 const { authenticate, isAdmin } = require("../middleware/auth");
+const { manageAssingmentSellerAndProduct } = require("./utils");
 
 router.use(authenticate);
 router.use(isAdmin);
@@ -46,26 +48,30 @@ router.post("/", async (req, res) => {
       // Update productId count
       product.count -= item.quantity;
 
-      // Update sellerId count for this productId
-      const sellerStockIndex = product.sellerStocks.findIndex(
-        (s) => s.sellerId.toString() === sellerId
+      // Update seller stock using SellerStock model
+      const existingStock = await SellerStock.findBySellerAndProduct(
+        sellerId,
+        product._id,
       );
 
-      if (sellerStockIndex > -1) {
-        product.sellerStocks[sellerStockIndex].quantity += item.quantity;
+      if (existingStock) {
+        await existingStock.updateQuantity(item.quantity);
       } else {
-        product.sellerStocks.push({
-          sellerId: sellerId,
+        await SellerStock.create({
+          seller: sellerId,
+          product: product._id,
           quantity: item.quantity,
         });
       }
 
-      // Add productId to sellerId's assigned products if not already there
-      if (!seller.assignedProducts.includes(product._id)) {
-        seller.assignedProducts.push(product._id);
-      }
-
-      await product.save();
+      // assign product to seller
+      await manageAssingmentSellerAndProduct(
+        sellerId,
+        product._id,
+        (isSaveSeller = false),
+        (isSaveProduct = true),
+        (toAssign = true),
+      );
 
       // Create transfer record
       const transfer = await Transfer.create({
@@ -79,56 +85,10 @@ router.post("/", async (req, res) => {
 
     await seller.save();
 
-    res.status(201).json({ message: "Muvaffaqiyatli biriktirildi", transfers: createdTransfers });
-  } catch (error) {
-    res.status(400).json({ error: error.message });
-  }
-});
-
-// Update transfer (Edit)
-router.put("/:id", async (req, res) => {
-  try {
-    const { quantity } = req.body;
-    const transfer = await Transfer.findById(req.params.id);
-    if (!transfer) {
-      return res.status(404).json({ error: "Transfer topilmadi" });
-    }
-
-    if (transfer.status === "cancelled") {
-      return res.status(400).json({ error: "Bekor qilingan transferni tahrirlab bo'lmaydi" });
-    }
-
-    const product = await Product.findById(transfer.productId);
-    const diff = quantity - transfer.quantity;
-
-    if (diff > 0) {
-      // Oshirilyapti, omborda borligini tekshirish
-      if (product.count < diff) {
-        return res.status(400).json({ error: "Omborda yetarli mahsulot yo'q" });
-      }
-      product.count -= diff;
-    } else {
-      // Kamaytiryapti, omborga qaytadi
-      product.count += Math.abs(diff);
-    }
-
-    // Sotuvchi stokini yangilash
-    const sellerStockIndex = product.sellerStocks.findIndex(
-      (s) => s.sellerId.toString() === transfer.sellerId.toString()
-    );
-
-    if (sellerStockIndex > -1) {
-      product.sellerStocks[sellerStockIndex].quantity += diff;
-      if (product.sellerStocks[sellerStockIndex].quantity < 0) {
-         return res.status(400).json({ error: "Sotuvchida buncha mahsulot yo'q (allaqachon sotilgan bo'lishi mumkin)" });
-      }
-    }
-
-    await product.save();
-    transfer.quantity = quantity;
-    await transfer.save();
-
-    res.json({ message: "Transfer yangilandi", transfer });
+    res.status(201).json({
+      message: "Muvaffaqiyatli biriktirildi",
+      transfers: createdTransfers,
+    });
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
@@ -137,44 +97,59 @@ router.put("/:id", async (req, res) => {
 // Return transfer
 router.post("/:id/return", async (req, res) => {
   try {
+    const { quantity } = req.body; // Allow partial returns
     const transfer = await Transfer.findById(req.params.id);
+
     if (!transfer) {
-      return res.status(404).json({ error: "Transfer topilmadi" });
+      return res.status(404).json({ error: "Transfer not found" });
     }
 
-    if (transfer.type === "return" || transfer.status === "cancelled") {
-      return res.status(400).json({ error: "Ushbu transferni qaytarib bo'lmaydi" });
+    if (transfer.type === "return") {
+      return res.status(400).json({ error: "Cannot return a return transfer" });
     }
 
-    const product = await Product.findById(transfer.productId);
-    const sellerStockIndex = product.sellerStocks.findIndex(
-      (s) => s.sellerId.toString() === transfer.sellerId.toString()
+    const returnQuantity = quantity || transfer.quantity; // Full return if no quantity specified
+
+    if (returnQuantity > transfer.quantity) {
+      return res
+        .status(400)
+        .json({ error: "Cannot return more than original transfer" });
+    }
+
+    const sellerStock = await SellerStock.findBySellerAndProduct(
+      transfer.sellerId,
+      transfer.productId,
     );
 
-    if (sellerStockIndex === -1 || product.sellerStocks[sellerStockIndex].quantity < transfer.quantity) {
-       return res.status(400).json({ error: "Sotuvchida yetarli mahsulot yo'q (ba'zilari sotilgan bo'lishi mumkin)" });
+    if (!sellerStock || sellerStock.quantity < returnQuantity) {
+      return res.status(400).json({
+        error: "Seller doesn't have enough stock to return",
+      });
     }
 
-    // Omborga qaytarish
-    product.count += transfer.quantity;
-    product.sellerStocks[sellerStockIndex].quantity -= transfer.quantity;
-
+    // Return to warehouse
+    const product = await Product.findById(transfer.productId);
+    product.count += returnQuantity;
     await product.save();
 
-    // Yangi qaytarish recordini yaratish yoki statusini o'zgartirish
-    // Foydalanuvchi "Qaytarilganlar (Return) - To'q sariq" dedi, demak bu status emas, record turi bo'lishi kerak
-    await Transfer.create({
+    // Update seller stock
+    await sellerStock.updateQuantity(-returnQuantity);
+
+    // Create return transfer record
+    const returnTransfer = await Transfer.create({
       sellerId: transfer.sellerId,
       productId: transfer.productId,
-      quantity: transfer.quantity,
+      quantity: returnQuantity,
       type: "return",
+      relatedTransfer: transfer._id, // 🆕 Link to original
     });
 
-    // Asl transferni bekor qilish (ixtiyoriy, lekin mantiqan qaytarilgan deb belgilash yaxshi)
-    transfer.status = "cancelled";
-    await transfer.save();
-
-    res.json({ message: "Mahsulot omborga qaytarildi" });
+    res.json({
+      message: "Stock returned to warehouse",
+      originalTransfer: transfer,
+      returnTransfer,
+      returnedQuantity: returnQuantity,
+    });
   } catch (error) {
     res.status(400).json({ error: error.message });
   }

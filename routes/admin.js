@@ -3,9 +3,12 @@ const router = express.Router();
 const User = require("../models/User");
 const Product = require("../models/Product");
 const Sale = require("../models/Sale");
+const SellerStock = require("../models/SellerStock");
+const Transfer = require("../models/Transfer");
 const { authenticate, isAdmin } = require("../middleware/auth");
 const { validateSeller } = require("../middleware/validation");
 const MonthlyReportDTO = require("../dto/MonthlyReportDTO");
+const { manageAssingmentSellerAndProduct } = require("./utils");
 
 // All admin routes require authentication and admin role
 router.use(authenticate);
@@ -109,31 +112,30 @@ router.post("/sellers/:sellerId/products/:productId", async (req, res) => {
       return res.status(400).json({ error: "Omborda yetarli mahsulot yo'q" });
     }
 
-    // Add productId to seller's assigned products
-    if (!seller.assignedProducts.includes(product._id)) {
-      seller.assignedProducts.push(product._id);
-      await seller.save();
-    }
-
-    // Add seller to productId's assigned sellers
-    if (!product.assignedSellers.includes(seller._id)) {
-      product.assignedSellers.push(seller._id);
-    }
+    await manageAssingmentSellerAndProduct(
+      seller._id,
+      product._id,
+      (isSaveSeller = true),
+      (isSaveProduct = false),
+      (toAssign = true),
+    );
 
     // Reduce count if quantity provided
     if (assignQuantity > 0) {
       product.count -= assignQuantity;
 
-      // Update seller's count for this productId
-      const sellerStockIndex = product.sellerStocks.findIndex(
-        (s) => s.sellerId.toString() === seller._id.toString(),
+      // Update seller's stock using SellerStock model
+      const existingStock = await SellerStock.findBySellerAndProduct(
+        seller._id,
+        product._id,
       );
 
-      if (sellerStockIndex > -1) {
-        product.sellerStocks[sellerStockIndex].quantity += assignQuantity;
+      if (existingStock) {
+        await existingStock.updateQuantity(assignQuantity);
       } else {
-        product.sellerStocks.push({
-          sellerId: seller._id,
+        await SellerStock.create({
+          seller: seller._id,
+          product: product._id,
           quantity: assignQuantity,
         });
       }
@@ -146,11 +148,14 @@ router.post("/sellers/:sellerId/products/:productId", async (req, res) => {
   }
 });
 
-// Unassign productId from seller
+// Delete product from seller's stock
 router.delete("/sellers/:sellerId/products/:productId", async (req, res) => {
   try {
-    const seller = await User.findById(req.params.sellerId);
-    const product = await Product.findById(req.params.productId);
+    const { sellerId, productId } = req.params;
+    const { returnStock } = req.query; // ?returnStock=true
+
+    const seller = await User.findById(sellerId);
+    const product = await Product.findById(productId);
 
     if (!seller || seller.role !== "seller") {
       return res.status(404).json({ error: "Seller not found" });
@@ -160,17 +165,56 @@ router.delete("/sellers/:sellerId/products/:productId", async (req, res) => {
       return res.status(404).json({ error: "Product not found" });
     }
 
-    seller.assignedProducts = seller.assignedProducts.filter(
-      (id) => id.toString() !== product._id.toString(),
+    // Check seller's current stock
+    const sellerStock = await SellerStock.findBySellerAndProduct(
+      sellerId,
+      productId,
     );
-    await seller.save();
+    const currentStock = sellerStock ? sellerStock.quantity : 0;
 
-    product.assignedSellers = product.assignedSellers.filter(
-      (id) => id.toString() !== seller._id.toString(),
+    // If seller has stock, handle it
+    if (currentStock > 0) {
+      if (returnStock === "true") {
+        // Return stock to warehouse
+        product.count += currentStock;
+        await product.save();
+
+        // Update seller stock to 0
+        await sellerStock.updateQuantity(-currentStock);
+
+        // Create return transfer record
+        await Transfer.create({
+          sellerId: sellerId,
+          productId: productId,
+          quantity: currentStock,
+          type: "return",
+          status: "completed",
+        });
+
+        // Continue with unassignment...
+      } else {
+        // Refuse to unassign with stock
+        return res.status(400).json({
+          error: `Cannot unassign. Seller has ${currentStock} units in stock. Return stock first or use ?returnStock=true`,
+          currentStock: currentStock,
+          suggestion: `Use: DELETE /admin/sellers/${sellerId}/products/${productId}?returnStock=true`,
+        });
+      }
+    }
+    // Remove assignments
+    await manageAssingmentSellerAndProduct(
+      sellerId,
+      productId,
+      (isSaveSeller = true),
+      (isSaveProduct = true),
+      (toAssign = false),
     );
-    await product.save();
 
-    res.json({ message: "Product unassigned successfully" });
+    res.json({
+      message: "Product unassigned successfully",
+      stockReturned:
+        currentStock > 0 && returnStock === "true" ? currentStock : 0,
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -205,6 +249,190 @@ router.get("/reports/monthly", async (req, res) => {
     const reportDTO = MonthlyReportDTO.create(sales, startDate, endDate);
 
     res.json(reportDTO.toJSON());
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get all seller stocks
+router.get("/seller-stocks", async (req, res) => {
+  try {
+    const sellerStocks = await SellerStock.find()
+      .populate("seller", "username firstName lastName telegramId")
+      .populate("product", "name sku price costPrice")
+      .sort({ updatedAt: -1 });
+
+    res.json({ sellerStocks });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get stocks for a specific seller
+router.get("/sellers/:sellerId/stocks", async (req, res) => {
+  try {
+    const { sellerId } = req.params;
+
+    const sellerStocks = await SellerStock.findBySeller(sellerId);
+
+    if (!sellerStocks || sellerStocks.length === 0) {
+      return res.json({
+        sellerStocks: [],
+        message: "No stocks found for this seller",
+      });
+    }
+
+    res.json({ sellerStocks });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get stocks for a specific product
+router.get("/products/:productId/stocks", async (req, res) => {
+  try {
+    const { productId } = req.params;
+
+    const productStocks = await SellerStock.findByProduct(productId);
+
+    if (!productStocks || productStocks.length === 0) {
+      return res.json({
+        productStocks: [],
+        message: "No stocks found for this product",
+      });
+    }
+
+    res.json({ productStocks });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update seller stock quantity directly
+router.patch("/seller-stocks/:stockId", async (req, res) => {
+  try {
+    const { stockId } = req.params;
+    const { quantity } = req.body;
+
+    if (typeof quantity !== "number" || quantity < 0) {
+      return res
+        .status(400)
+        .json({ error: "Valid quantity is required (must be >= 0)" });
+    }
+
+    const sellerStock = await SellerStock.findById(stockId)
+      .populate("seller", "username firstName lastName")
+      .populate("product", "name sku");
+
+    if (!sellerStock) {
+      return res.status(404).json({ error: "Seller stock not found" });
+    }
+
+    const oldQuantity = sellerStock.quantity;
+    const difference = quantity - oldQuantity;
+    const isIncrease = difference > 0;
+
+    const product = await Product.findById(sellerStock.product._id);
+
+    if (isIncrease) {
+      // Increasing seller stock - need to take from warehouse
+      if (product.count < difference) {
+        return res.status(400).json({
+          error: `Cannot increase stock by ${difference}. Warehouse only has ${product.count} units available.`,
+          warehouseStock: product.count,
+          requestedIncrease: difference,
+        });
+      }
+      product.count -= difference; // Take from warehouse
+    } else if (difference < 0) {
+      // Decreasing seller stock - return to warehouse
+      product.count += Math.abs(difference); // Add to warehouse
+    }
+
+    await product.save();
+
+    // 🔧 CRITICAL: Create Transfer record for audit trail
+    if (difference !== 0) {
+      await Transfer.create({
+        sellerId: sellerStock.seller._id,
+        productId: sellerStock.product._id,
+        quantity: Math.abs(difference),
+        type: isIncrease ? "transfer" : "return",
+        status: "completed",
+      });
+    }
+
+    // Update seller stock
+    await sellerStock.updateQuantity(quantity);
+
+    res.json({
+      message: "Stock quantity updated successfully",
+      sellerStock,
+      change: difference,
+      warehouseStockAfter: product.count,
+      transferCreated: difference !== 0,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Delete seller stock (remove seller from product)
+router.delete("/seller-stocks/:stockId", async (req, res) => {
+  try {
+    const { stockId } = req.params;
+
+    const sellerStock = await SellerStock.findById(stockId)
+      .populate("seller", "username firstName lastName")
+      .populate("product", "name sku");
+
+    if (!sellerStock) {
+      return res.status(404).json({ error: "Seller stock not found" });
+    }
+
+    const returnedQuantity = sellerStock.quantity;
+
+    // Return quantity to warehouse
+    const product = await Product.findById(sellerStock.product._id);
+    if (product && returnedQuantity > 0) {
+      product.count += returnedQuantity;
+      await product.save();
+
+      // 🆕 CREATE TRANSFER RECORD for audit trail
+      await Transfer.create({
+        sellerId: sellerStock.seller._id,
+        productId: sellerStock.product._id,
+        quantity: returnedQuantity,
+        type: "return",
+        status: "completed",
+      });
+    }
+
+    // Remove seller from assigned sellers (only if no other products)
+    const otherStocksOfSameProduct = await SellerStock.find({
+      seller: sellerStock.seller._id,
+      product: sellerStock.product._id,
+      _id: { $ne: stockId }, // Exclude current stock
+    });
+
+    if (otherStocksOfSameProduct.length === 0) {
+      await manageAssingmentSellerAndProduct(
+        sellerStock.seller._id,
+        sellerStock.product._id,
+        (isSaveSeller = true),
+        (isSaveProduct = true),
+        (toAssign = false),
+      );
+    }
+
+    await sellerStock.updateQuantity(0);
+
+    res.json({
+      message: "Seller stock removed successfully",
+      returnedToWarehouse: returnedQuantity,
+      transferCreated: returnedQuantity > 0,
+      sellerStock,
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
