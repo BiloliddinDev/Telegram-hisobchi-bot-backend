@@ -9,7 +9,7 @@ const Transfer = require("../models/Transfer");
 const { authenticate, isAdmin } = require("../middleware/auth");
 const { validateSeller } = require("../middleware/validation");
 const MonthlyReportDTO = require("../dto/MonthlyReportDTO");
-const { manageAssingmentSellerAndProduct } = require("./utils");
+const { manageAssignmentSellerAndProduct } = require("./utils");
 
 // All admin routes require authentication and admin role
 router.use(authenticate);
@@ -113,9 +113,9 @@ router.post("/sellers/:sellerId/products/:productId", async (req, res) => {
       return res.status(400).json({ error: "Omborda yetarli mahsulot yo'q" });
     }
 
-    await manageAssingmentSellerAndProduct(
-      seller._id,
-      product._id,
+    await manageAssignmentSellerAndProduct(
+      seller,
+      product,
       (isSaveSeller = true),
       (isSaveProduct = false),
       (toAssign = true),
@@ -203,9 +203,9 @@ router.delete("/sellers/:sellerId/products/:productId", async (req, res) => {
       }
     }
     // Remove assignments
-    await manageAssingmentSellerAndProduct(
-      sellerId,
-      productId,
+    await manageAssignmentSellerAndProduct(
+      seller,
+      product,
       (isSaveSeller = true),
       (isSaveProduct = true),
       (toAssign = false),
@@ -507,7 +507,7 @@ router.delete("/seller-stocks/:stockId", async (req, res) => {
     });
 
     if (otherStocksOfSameProduct.length === 0) {
-      await manageAssingmentSellerAndProduct(
+      await manageAssignmentSellerAndProduct(
         sellerStock.seller._id,
         sellerStock.product._id,
         (isSaveSeller = true),
