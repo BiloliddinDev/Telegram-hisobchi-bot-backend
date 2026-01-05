@@ -180,17 +180,6 @@
  *         schema:
  *           type: string
  *         description: Product ID
- *     requestBody:
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               quantity:
- *                 type: number
- *                 minimum: 0
- *                 description: Quantity to transfer (0 for permission only)
- *                 example: 10
  *     responses:
  *       200:
  *         description: Product assigned successfully
@@ -206,12 +195,6 @@
  *                   $ref: '#/components/schemas/User'
  *                 product:
  *                   $ref: '#/components/schemas/Product'
- *       400:
- *         description: Insufficient warehouse stock
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
  *       404:
  *         description: Seller or product not found
  *         content:

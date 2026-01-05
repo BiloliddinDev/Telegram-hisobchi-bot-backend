@@ -20,7 +20,7 @@ router.get("/", authenticate, async (req, res) => {
     const startDate = new Date(
       year || new Date().getFullYear(),
       (month || new Date().getMonth()) - 1,
-      1
+      1,
     );
     const endDate = new Date(
       year || new Date().getFullYear(),
@@ -28,7 +28,7 @@ router.get("/", authenticate, async (req, res) => {
       0,
       23,
       59,
-      59
+      59,
     );
 
     query.timestamp = { $gte: startDate, $lte: endDate };
@@ -57,4 +57,3 @@ router.get("/", authenticate, async (req, res) => {
 });
 
 module.exports = router;
-

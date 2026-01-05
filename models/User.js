@@ -1,6 +1,6 @@
 const mongoose = require("mongoose");
 
-const userSchema = new mongoose.Schema({
+const UserSchema = new mongoose.Schema({
   telegramId: {
     type: String,
     unique: true,
@@ -36,6 +36,10 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: true,
   },
+  isDeleted: {
+    type: Boolean,
+    default: false,
+  },
   assignedProducts: [
     {
       type: mongoose.Schema.Types.ObjectId,
@@ -52,9 +56,25 @@ const userSchema = new mongoose.Schema({
   },
 });
 
-userSchema.pre("save", function (next) {
+UserSchema.methods.inactivate = async function () {
+  this.isActive = false;
+  await this.save();
+};
+
+UserSchema.methods.activate = async function () {
+  this.isActive = true;
+  await this.save();
+};
+
+UserSchema.methods.delete = async function () {
+  this.isDeleted = true;
+  this.isActive = false;
+  await this.save();
+};
+
+UserSchema.pre("save", function (next) {
   this.updatedAt = Date.now();
   next();
 });
 
-module.exports = mongoose.model("User", userSchema);
+module.exports = mongoose.model("User", UserSchema);

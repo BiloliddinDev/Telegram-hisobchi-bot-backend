@@ -19,7 +19,7 @@ router.use(isAdmin);
 router.get("/sellers", async (req, res) => {
   try {
     const sellers = await User.find({ role: "seller" })
-      .populate("assignedProducts", "name price")
+      .populate("assignedProducts", "name price costPrice count")
       .select("-__v")
       .sort({ createdAt: -1 });
 
@@ -77,7 +77,7 @@ router.put("/sellers/:id", async (req, res) => {
   }
 });
 
-// Delete seller
+// Delete seller (Actually make as deleted)
 router.delete("/sellers/:id", async (req, res) => {
   try {
     const seller = await User.findById(req.params.id);
@@ -86,8 +86,9 @@ router.delete("/sellers/:id", async (req, res) => {
       return res.status(404).json({ error: "Seller not found" });
     }
 
-    await User.findByIdAndDelete(req.params.id);
-    res.json({ message: "Seller deleted successfully" });
+    await seller.delete();
+
+    res.json({ message: "Seller inactivated successfully" });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -96,7 +97,6 @@ router.delete("/sellers/:id", async (req, res) => {
 // Assign productId to seller
 router.post("/sellers/:sellerId/products/:productId", async (req, res) => {
   try {
-    const { quantity } = req.body;
     const seller = await User.findById(req.params.sellerId);
     const product = await Product.findById(req.params.productId);
 
@@ -108,40 +108,13 @@ router.post("/sellers/:sellerId/products/:productId", async (req, res) => {
       return res.status(404).json({ error: "Product not found" });
     }
 
-    const assignQuantity = parseInt(quantity) || 0;
-    if (assignQuantity > product.count) {
-      return res.status(400).json({ error: "Omborda yetarli mahsulot yo'q" });
-    }
-
     await manageAssignmentSellerAndProduct(
       seller,
       product,
       (isSaveSeller = true),
-      (isSaveProduct = false),
+      (isSaveProduct = true),
       (toAssign = true),
     );
-
-    // Reduce count if quantity provided
-    if (assignQuantity > 0) {
-      product.count -= assignQuantity;
-
-      // Update seller's stock using SellerStock model
-      const existingStock = await SellerStock.findBySellerAndProduct(
-        seller._id,
-        product._id,
-      );
-
-      if (existingStock) {
-        await existingStock.updateQuantity(assignQuantity);
-      } else {
-        await SellerStock.create({
-          seller: seller._id,
-          product: product._id,
-          quantity: assignQuantity,
-        });
-      }
-    }
-    await product.save();
 
     res.json({ message: "Product assigned successfully", seller, product });
   } catch (error) {
@@ -224,29 +197,36 @@ router.delete("/sellers/:sellerId/products/:productId", async (req, res) => {
 // Get monthly reports
 router.get("/reports/monthly", async (req, res) => {
   try {
-    const { year, month } = req.query;
-    const startDate = new Date(
-      year || new Date().getFullYear(),
-      (month || new Date().getMonth()) - 1,
-      1,
-    );
-    const endDate = new Date(
-      year || new Date().getFullYear(),
-      month || new Date().getMonth(),
-      0,
-      23,
-      59,
-      59,
-    );
+    const { start, end } = req.query;
+
+    console.log(start, end);
+
+    if (!start || !end) {
+      return res.status(400).json({
+        error: "start and end query params are required (YYYY-MM-DD)",
+      });
+    }
+
+    // Parse dates
+    const startDate = new Date(`${start}T00:00:00.000Z`);
+    const endDate = new Date(`${end}T23:59:59.999Z`);
+
+    if (isNaN(startDate) || isNaN(endDate)) {
+      return res.status(400).json({
+        error: "Invalid date format. Use YYYY-MM-DD",
+      });
+    }
 
     const sales = await Sale.find({
-      timestamp: { $gte: startDate, $lte: endDate },
+      timestamp: {
+        $gte: startDate,
+        $lte: endDate,
+      },
     })
       .populate("sellerId", "username firstName lastName")
       .populate("productId", "name price")
       .sort({ timestamp: -1 });
 
-    // Use DTO to format response
     const reportDTO = MonthlyReportDTO.create(sales, startDate, endDate);
 
     res.json(reportDTO.toJSON());
