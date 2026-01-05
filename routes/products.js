@@ -8,11 +8,16 @@ const { validateProduct } = require("../middleware/validation");
 // Get all products (admin only)
 router.get("/", authenticate, isAdmin, async (req, res) => {
   try {
-    const { category, name, page = 1, limit = 10 } = req.query;
+    const { category, search, page = 1, limit = 10 } = req.query;
 
     const filter = {};
     if (category) filter.category = category;
-    if (name) filter.name = { $regex: name, $options: "i" };
+    if (search) {
+      filter.$or = [
+        { name: { $regex: search, $options: "i" } },
+        { sku: { $regex: search, $options: "i" } },
+      ];
+    }
 
     const options = {
       page: parseInt(page),

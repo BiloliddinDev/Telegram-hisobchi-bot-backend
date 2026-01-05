@@ -144,17 +144,16 @@ router.delete("/sellers/:sellerId/products/:productId", async (req, res) => {
       sellerId,
       productId,
     );
-    const currentStock = sellerStock ? sellerStock.quantity : 0;
 
     // If seller has stock, handle it
-    if (currentStock > 0) {
+    if (sellerStock && sellerStock.quantity > 0) {
       if (returnStock === "true") {
         // Return stock to warehouse
         product.count += currentStock;
         await product.save();
 
         // Update seller stock to 0
-        await sellerStock.updateQuantity(-currentStock);
+        await sellerStock.updateQuantity(-currentStock, false);
 
         // Create return transfer record
         await Transfer.create({
@@ -175,6 +174,7 @@ router.delete("/sellers/:sellerId/products/:productId", async (req, res) => {
         });
       }
     }
+
     // Remove assignments
     await manageAssignmentSellerAndProduct(
       seller,
@@ -183,6 +183,10 @@ router.delete("/sellers/:sellerId/products/:productId", async (req, res) => {
       (isSaveProduct = true),
       (toAssign = false),
     );
+
+    if (sellerStock) {
+      await sellerStock.updateIsAvailable(false, true);
+    }
 
     res.json({
       message: "Product unassigned successfully",

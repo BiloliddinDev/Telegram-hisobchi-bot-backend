@@ -19,6 +19,11 @@ const SellerStockSchema = new Schema(
       min: 0,
       default: 0,
     },
+    isAvailable: {
+      type: Boolean,
+      required: true,
+      default: true,
+    },
     lastTransferDate: {
       type: Date,
       default: Date.now,
@@ -74,10 +79,19 @@ SellerStockSchema.statics.findByProduct = function (productId) {
 };
 
 // Instance method to update quantity
-SellerStockSchema.methods.updateQuantity = function (quantity) {
+SellerStockSchema.methods.updateQuantity = function (quantity, toSave = true) {
   this.quantity = Math.max(0, this.quantity + quantity);
   this.lastTransferDate = new Date();
-  return this.save();
+  return toSave ? this.save() : Promise.resolve();
+};
+
+// Instance method to update isAvailable status
+SellerStockSchema.methods.updateIsAvailable = function (
+  isAvailable,
+  toSave = true,
+) {
+  this.isAvailable = isAvailable;
+  return toSave ? this.save() : Promise.resolve();
 };
 
 // Pre-save middleware to update lastTransferDate when quantity changes

@@ -35,6 +35,39 @@ const options = {
         },
       },
       schemas: {
+        PaginatedResponse: {
+          type: "object",
+          properties: {
+            totalDocs: { type: "integer", example: 100 },
+            limit: { type: "integer", example: 10 },
+            totalPages: { type: "integer", example: 10 },
+            page: { type: "integer", example: 1 },
+            pagingCounter: { type: "integer", example: 1 },
+            hasPrevPage: { type: "boolean", example: false },
+            hasNextPage: { type: "boolean", example: true },
+            prevPage: { type: "integer", nullable: true, example: null },
+            nextPage: { type: "integer", nullable: true, example: 2 },
+          },
+        },
+        ProductPagination: {
+          type: "object",
+          properties: {
+            products: {
+              allOf: [
+                { $ref: "#/components/schemas/PaginatedResponse" },
+                {
+                  type: "object",
+                  properties: {
+                    docs: {
+                      type: "array",
+                      items: { $ref: "#/components/schemas/Product" },
+                    },
+                  },
+                },
+              ],
+            },
+          },
+        },
         User: {
           type: "object",
           properties: {
@@ -70,6 +103,7 @@ const options = {
             assignedProducts: {
               type: "array",
               items: {
+                type: "object",
                 $ref: "#/components/schemas/Product",
               },
               description: "Products assigned to seller",
@@ -77,6 +111,27 @@ const options = {
             isActive: {
               type: "boolean",
               description: "User active status",
+            },
+          },
+        },
+        UserPublic: {
+          type: "object",
+          properties: {
+            _id: {
+              type: "string",
+              description: "User ID",
+            },
+            username: {
+              type: "string",
+              description: "Username",
+            },
+            firstName: {
+              type: "string",
+              description: "First name",
+            },
+            lastName: {
+              type: "string",
+              description: "Last name",
             },
           },
         },
@@ -123,7 +178,7 @@ const options = {
             },
             category: {
               type: "object",
-              ref: "#/components/schemas/Category",
+              $ref: "#/components/schemas/Category",
               description: "Product category",
             },
             count: {
@@ -149,7 +204,8 @@ const options = {
             assignedSellers: {
               type: "array",
               items: {
-                type: "string",
+                type: "object",
+                $ref: "#/components/schemas/UserPublic",
               },
               description: "Sellers assigned to this product",
             },

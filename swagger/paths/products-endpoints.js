@@ -13,10 +13,10 @@
  *           type: string
  *         description: Category ID for filtering
  *       - in: query
- *         name: name
+ *         name: search
  *         schema:
  *           type: string
- *         description: Product name for filtering
+ *         description: Product name or SKU for filtering
  *       - in: query
  *         name: page
  *         schema:
@@ -38,11 +38,7 @@
  *           application/json:
  *             schema:
  *               type: object
- *               properties:
- *                 products:
- *                   type: array
- *                   items:
- *                     $ref: '#/components/schemas/Product'
+ *               $ref: '#/components/schemas/ProductPagination'
  *       401:
  *         description: Authentication required
  *       403:
