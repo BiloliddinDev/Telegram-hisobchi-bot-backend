@@ -96,7 +96,6 @@ router.delete("/sellers/:id", async (req, res) => {
 // Assign productId to seller
 router.post("/sellers/:sellerId/products/:productId", async (req, res) => {
   try {
-    const { quantity } = req.body;
     const seller = await User.findById(req.params.sellerId);
     const product = await Product.findById(req.params.productId);
 
@@ -108,40 +107,13 @@ router.post("/sellers/:sellerId/products/:productId", async (req, res) => {
       return res.status(404).json({ error: "Product not found" });
     }
 
-    const assignQuantity = parseInt(quantity) || 0;
-    if (assignQuantity > product.count) {
-      return res.status(400).json({ error: "Omborda yetarli mahsulot yo'q" });
-    }
-
     await manageAssignmentSellerAndProduct(
       seller,
       product,
       (isSaveSeller = true),
-      (isSaveProduct = false),
+      (isSaveProduct = true),
       (toAssign = true),
     );
-
-    // Reduce count if quantity provided
-    if (assignQuantity > 0) {
-      product.count -= assignQuantity;
-
-      // Update seller's stock using SellerStock model
-      const existingStock = await SellerStock.findBySellerAndProduct(
-        seller._id,
-        product._id,
-      );
-
-      if (existingStock) {
-        await existingStock.updateQuantity(assignQuantity);
-      } else {
-        await SellerStock.create({
-          seller: seller._id,
-          product: product._id,
-          quantity: assignQuantity,
-        });
-      }
-    }
-    await product.save();
 
     res.json({ message: "Product assigned successfully", seller, product });
   } catch (error) {
