@@ -8,11 +8,22 @@ const { validateProduct } = require("../middleware/validation");
 // Get all products (admin only)
 router.get("/", authenticate, isAdmin, async (req, res) => {
   try {
-    const products = await Product.find()
-      .populate("category")
-      .populate("assignedSellers", "username firstName lastName")
-      .sort({ createdAt: -1 });
+    const { category, name, page = 1, limit = 10 } = req.query;
 
+    const filter = {};
+    if (category) filter.category = category;
+    if (name) filter.name = { $regex: name, $options: "i" };
+
+    const options = {
+      page: parseInt(page),
+      limit: parseInt(limit),
+      populate: [
+        "category",
+        { path: "assignedSellers", select: "username firstName lastName" },
+      ],
+      sort: { createdAt: -1 },
+    };
+    const products = await Product.paginate(filter, options);
     res.json({ products });
   } catch (error) {
     res.status(500).json({ error: error.message });

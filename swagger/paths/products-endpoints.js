@@ -6,6 +6,29 @@
  *       - Products
  *     summary: Get all products (Admin only)
  *     description: Returns a list of all products in the system with category and seller information
+ *     parameters:
+ *       - in: query
+ *         name: category
+ *         schema:
+ *           type: string
+ *         description: Category ID for filtering
+ *       - in: query
+ *         name: name
+ *         schema:
+ *           type: string
+ *         description: Product name for filtering
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *         description: Page number for pagination
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *         description: Number of items per page
  *     security:
  *       - TelegramAuth: []
  *     responses:

@@ -1,4 +1,4 @@
-class MonthlyReportDTO {
+class ReportDTO {
   constructor(sales, startDate, endDate) {
     this.period = {
       startDate,
@@ -211,7 +211,7 @@ class MonthlyReportDTO {
 
   // Static method to create DTO from sales data
   static create(sales, startDate, endDate) {
-    return new MonthlyReportDTO(sales, startDate, endDate);
+    return new ReportDTO(sales, startDate, endDate);
   }
 
   // Method to get a simplified version for API response
@@ -227,4 +227,4 @@ class MonthlyReportDTO {
   }
 }
 
-module.exports = MonthlyReportDTO;
+module.exports = ReportDTO;

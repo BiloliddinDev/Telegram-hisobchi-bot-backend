@@ -1,5 +1,5 @@
 const mongoose = require("mongoose");
-
+const mongoosePaginate = require("mongoose-paginate-v2");
 const productSchema = new mongoose.Schema({
   name: {
     type: String,
@@ -65,5 +65,7 @@ productSchema.pre("save", function (next) {
   this.updatedAt = Date.now();
   next();
 });
+
+productSchema.plugin(mongoosePaginate);
 
 module.exports = mongoose.model("Product", productSchema);

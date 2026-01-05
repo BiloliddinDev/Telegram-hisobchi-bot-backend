@@ -58,10 +58,7 @@
           },
           "role": {
             "type": "string",
-            "enum": [
-              "admin",
-              "seller"
-            ],
+            "enum": ["admin", "seller"],
             "description": "User role"
           },
           "assignedProducts": {
@@ -252,18 +249,12 @@
           },
           "type": {
             "type": "string",
-            "enum": [
-              "transfer",
-              "return"
-            ],
+            "enum": ["transfer", "return"],
             "description": "Transfer type"
           },
           "status": {
             "type": "string",
-            "enum": [
-              "active",
-              "cancelled"
-            ],
+            "enum": ["active", "cancelled"],
             "description": "Transfer status"
           },
           "createdAt": {
@@ -291,7 +282,7 @@
           }
         }
       },
-      "MonthlyReport": {
+      "Report": {
         "type": "object",
         "properties": {
           "period": {
@@ -526,9 +517,7 @@
   "paths": {
     "/api/admin/sellers": {
       "get": {
-        "tags": [
-          "Admin - User Management"
-        ],
+        "tags": ["Admin - User Management"],
         "summary": "Get all sellers",
         "description": "Returns a list of all sellers",
         "security": [
@@ -569,9 +558,7 @@
     },
     "/api/admin/sellers/{sellerId}/products/{productId}": {
       "post": {
-        "tags": [
-          "Admin - Product Assignment"
-        ],
+        "tags": ["Admin - Product Assignment"],
         "summary": "Assign product to seller",
         "description": "Assigns a product to a seller with optional quantity transfer",
         "security": [
@@ -662,9 +649,7 @@
         }
       },
       "delete": {
-        "tags": [
-          "Admin - Product Assignment"
-        ],
+        "tags": ["Admin - Product Assignment"],
         "summary": "Unassign product from seller",
         "description": "Removes product assignment from seller with stock handling",
         "security": [
@@ -755,9 +740,7 @@
     },
     "/api/admin/seller-stocks": {
       "get": {
-        "tags": [
-          "Admin - Stock Management"
-        ],
+        "tags": ["Admin - Stock Management"],
         "summary": "Get all seller stocks",
         "description": "Returns a list of all seller stock records",
         "security": [
@@ -795,9 +778,7 @@
     },
     "/api/admin/seller-stocks/{stockId}": {
       "patch": {
-        "tags": [
-          "Admin - Stock Management"
-        ],
+        "tags": ["Admin - Stock Management"],
         "summary": "Update seller stock quantity",
         "description": "Updates seller stock quantity with warehouse adjustment and audit trail",
         "security": [
@@ -822,9 +803,7 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": [
-                  "quantity"
-                ],
+                "required": ["quantity"],
                 "properties": {
                   "quantity": {
                     "type": "number",
@@ -902,9 +881,7 @@
         }
       },
       "delete": {
-        "tags": [
-          "Admin - Stock Management"
-        ],
+        "tags": ["Admin - Stock Management"],
         "summary": "Delete seller stock",
         "description": "Removes seller stock record and returns quantity to warehouse",
         "security": [
@@ -956,9 +933,7 @@
     },
     "/api/admin/sellers/{sellerId}/stocks": {
       "get": {
-        "tags": [
-          "Admin - Stock Management"
-        ],
+        "tags": ["Admin - Stock Management"],
         "summary": "Get stocks for specific seller",
         "description": "Returns all stock records for a specific seller",
         "security": [
@@ -1006,9 +981,7 @@
     },
     "/api/admin/products/{productId}/stocks": {
       "get": {
-        "tags": [
-          "Admin - Stock Management"
-        ],
+        "tags": ["Admin - Stock Management"],
         "summary": "Get stocks for specific product",
         "description": "Returns all seller stock records for a specific product",
         "security": [
@@ -1056,9 +1029,7 @@
     },
     "/api/admin/transfers": {
       "get": {
-        "tags": [
-          "Admin - Transfer Management"
-        ],
+        "tags": ["Admin - Transfer Management"],
         "summary": "Get transfer history",
         "description": "Returns all transfer records with pagination",
         "security": [
@@ -1088,9 +1059,7 @@
         }
       },
       "post": {
-        "tags": [
-          "Admin - Transfer Management"
-        ],
+        "tags": ["Admin - Transfer Management"],
         "summary": "Create new transfer(s)",
         "description": "Creates new inventory transfers from warehouse to seller",
         "security": [
@@ -1104,10 +1073,7 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": [
-                  "sellerId",
-                  "items"
-                ],
+                "required": ["sellerId", "items"],
                 "properties": {
                   "sellerId": {
                     "type": "string",
@@ -1119,10 +1085,7 @@
                     "description": "List of products to transfer",
                     "items": {
                       "type": "object",
-                      "required": [
-                        "productId",
-                        "quantity"
-                      ],
+                      "required": ["productId", "quantity"],
                       "properties": {
                         "productId": {
                           "type": "string",
@@ -1203,9 +1166,7 @@
     },
     "/api/admin/transfers/{id}/return": {
       "post": {
-        "tags": [
-          "Admin - Transfer Management"
-        ],
+        "tags": ["Admin - Transfer Management"],
         "summary": "Return transfer to warehouse",
         "description": "Returns products from seller back to warehouse",
         "security": [
@@ -1293,9 +1254,7 @@
     },
     "/api/admin/analytics": {
       "get": {
-        "tags": [
-          "Admin - Analytics"
-        ],
+        "tags": ["Admin - Analytics"],
         "summary": "Get inventory analytics",
         "description": "Returns comprehensive inventory and sales analytics",
         "security": [
@@ -1381,13 +1340,11 @@
         }
       }
     },
-    "/api/admin/reports/monthly": {
+    "/api/admin/reports": {
       "get": {
-        "tags": [
-          "Admin - Reports"
-        ],
-        "summary": "Get comprehensive monthly report",
-        "description": "Returns detailed monthly sales report with analytics",
+        "tags": ["Admin - Reports"],
+        "summary": "Get comprehensive report",
+        "description": "Returns detailed sales report with analytics",
         "security": [
           {
             "TelegramAuth": []
@@ -1396,32 +1353,30 @@
         "parameters": [
           {
             "in": "query",
-            "name": "year",
+            "name": "start",
             "schema": {
-              "type": "number"
+              "type": "string"
             },
-            "description": "Report year (defaults to current year)",
-            "example": 2024
+            "description": "Report start date (defaults to current date)",
+            "example": "2024-01-01"
           },
           {
             "in": "query",
-            "name": "month",
+            "name": "end",
             "schema": {
-              "type": "number",
-              "minimum": 1,
-              "maximum": 12
+              "type": "string"
             },
-            "description": "Report month (defaults to current month)",
-            "example": 12
+            "description": "Report end date (defaults to current date)",
+            "example": "2024-01-31"
           }
         ],
         "responses": {
           "200": {
-            "description": "Monthly report retrieved successfully",
+            "description": "Range report retrieved successfully",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/MonthlyReport"
+                  "$ref": "#/components/schemas/Report"
                 }
               }
             }
@@ -1440,9 +1395,7 @@
     },
     "/api/health": {
       "get": {
-        "tags": [
-          "Health Check"
-        ],
+        "tags": ["Health Check"],
         "summary": "Check API health status",
         "description": "Returns the current status of the API server",
         "responses": {
@@ -1472,9 +1425,7 @@
     },
     "/api/auth/me": {
       "get": {
-        "tags": [
-          "Authentication"
-        ],
+        "tags": ["Authentication"],
         "summary": "Get current user information",
         "description": "Returns the authenticated user's profile with assigned products and role information",
         "security": [
@@ -1530,11 +1481,45 @@
     },
     "/api/products": {
       "get": {
-        "tags": [
-          "Products"
-        ],
+        "tags": ["Products"],
         "summary": "Get all active products",
         "description": "Returns a list of all active products available in the system",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "category",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Category ID for filtering"
+          },
+          {
+            "in": "query",
+            "name": "name",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Product name for filtering"
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Page number for pagination"
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Number of items per page"
+          }
+        ],
         "responses": {
           "200": {
             "description": "Products retrieved successfully",
@@ -1584,9 +1569,7 @@
     },
     "/api/sales": {
       "post": {
-        "tags": [
-          "Sales"
-        ],
+        "tags": ["Sales"],
         "summary": "Create a new sale",
         "description": "Creates a new sale record and updates inventory. Sellers can only sell assigned products from their stock.",
         "security": [
@@ -1600,11 +1583,7 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": [
-                  "productId",
-                  "quantity",
-                  "price"
-                ],
+                "required": ["productId", "quantity", "price"],
                 "properties": {
                   "productId": {
                     "type": "string",
@@ -1722,9 +1701,7 @@
         }
       },
       "get": {
-        "tags": [
-          "Sales"
-        ],
+        "tags": ["Sales"],
         "summary": "Get sales history",
         "description": "Returns sales history for the authenticated user with optional date filtering",
         "security": [
@@ -1784,9 +1761,7 @@
     },
     "/api/seller/stocks": {
       "get": {
-        "tags": [
-          "Seller - Stock Management"
-        ],
+        "tags": ["Seller - Stock Management"],
         "summary": "Get seller's stock inventory",
         "description": "Returns current seller's stock with summary statistics including total products, quantities, and values",
         "security": [
@@ -1858,9 +1833,7 @@
     },
     "/api/seller/stocks/product/{productId}": {
       "get": {
-        "tags": [
-          "Seller - Stock Management"
-        ],
+        "tags": ["Seller - Stock Management"],
         "summary": "Get stock for specific product",
         "description": "Returns seller's stock information for a specific product with detailed product information",
         "security": [
@@ -1923,9 +1896,7 @@
     },
     "/api/seller/products": {
       "get": {
-        "tags": [
-          "Seller - Product Management"
-        ],
+        "tags": ["Seller - Product Management"],
         "summary": "Get seller's assigned products",
         "description": "Returns products assigned to the current seller for selling",
         "security": [
@@ -1966,9 +1937,7 @@
     },
     "/api/seller/sales": {
       "get": {
-        "tags": [
-          "Seller - Sales Management"
-        ],
+        "tags": ["Seller - Sales Management"],
         "summary": "Get seller's sales history",
         "description": "Returns sales history for the current seller with optional date filtering",
         "security": [
@@ -2031,9 +2000,7 @@
     },
     "/api/seller/reports": {
       "get": {
-        "tags": [
-          "Seller - Reports"
-        ],
+        "tags": ["Seller - Reports"],
         "summary": "Get seller's monthly report",
         "description": "Returns monthly sales report for the current seller with summary statistics and detailed sales data",
         "security": [
@@ -2134,9 +2101,7 @@
     },
     "/api/categories": {
       "get": {
-        "tags": [
-          "Categories"
-        ],
+        "tags": ["Categories"],
         "summary": "Get all categories",
         "description": "Returns a list of all product categories sorted alphabetically",
         "responses": {

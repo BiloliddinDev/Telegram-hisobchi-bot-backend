@@ -288,7 +288,7 @@ const options = {
             },
           },
         },
-        MonthlyReport: {
+        Report: {
           type: "object",
           properties: {
             period: {

@@ -7,7 +7,7 @@ const SellerStock = require("../models/SellerStock");
 const Transfer = require("../models/Transfer");
 const { authenticate, isAdmin } = require("../middleware/auth");
 const { validateSeller } = require("../middleware/validation");
-const MonthlyReportDTO = require("../dto/MonthlyReportDTO");
+const ReportDTO = require("../dto/ReportDTO");
 const { manageAssignmentSellerAndProduct } = require("./utils");
 
 // All admin routes require authentication and admin role
@@ -194,7 +194,7 @@ router.delete("/sellers/:sellerId/products/:productId", async (req, res) => {
 });
 
 // Get monthly reports
-router.get("/reports/monthly", async (req, res) => {
+router.get("/reports", async (req, res) => {
   try {
     const { start, end } = req.query;
 
@@ -226,7 +226,7 @@ router.get("/reports/monthly", async (req, res) => {
       .populate("productId", "name price")
       .sort({ timestamp: -1 });
 
-    const reportDTO = MonthlyReportDTO.create(sales, startDate, endDate);
+    const reportDTO = ReportDTO.create(sales, startDate, endDate);
 
     res.json(reportDTO.toJSON());
   } catch (error) {

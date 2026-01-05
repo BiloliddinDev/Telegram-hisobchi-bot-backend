@@ -474,36 +474,34 @@
 
 /**
  * @swagger
- * /api/admin/reports/monthly:
+ * /api/admin/reports:
  *   get:
  *     tags:
  *       - Admin - Reports
- *     summary: Get comprehensive monthly report
- *     description: Returns detailed monthly sales report with analytics, seller performance, and product insights
+ *     summary: Get comprehensive report
+ *     description: Returns detailed sales report with analytics, seller performance, and product insights
  *     security:
  *       - TelegramAuth: []
  *     parameters:
  *       - in: query
- *         name: year
+ *         name: start
  *         schema:
- *           type: number
- *         description: Report year (defaults to current year)
- *         example: 2024
+ *           type: string
+ *         description: start date
+ *         example: 2026-01-01
  *       - in: query
- *         name: month
+ *         name: end
  *         schema:
- *           type: number
- *           minimum: 1
- *           maximum: 12
- *         description: Report month (defaults to current month)
- *         example: 12
+ *           type: string
+ *         description: end date
+ *         example: 2026-02-01
  *     responses:
  *       200:
- *         description: Monthly report retrieved successfully
+ *         description: Range report retrieved successfully
  *         content:
  *           application/json:
  *             schema:
- *               $ref: '#/components/schemas/MonthlyReport'
+ *               $ref: '#/components/schemas/Report'
  *       401:
  *         description: Authentication required
  *       403:
