@@ -6,11 +6,13 @@ const transferSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
+      index: true,
     },
     productId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Product",
       required: true,
+      index: true,
     },
     quantity: {
       type: Number,
@@ -29,9 +31,10 @@ const transferSchema = new mongoose.Schema(
     transferDate: {
       type: Date,
       default: Date.now,
+      index: true, // useful for reporting / date range queries
     },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
-
+transferSchema.index({ sellerId: 1, productId: 1 }); // all transfers for seller + product
 module.exports = mongoose.model("Transfer", transferSchema);

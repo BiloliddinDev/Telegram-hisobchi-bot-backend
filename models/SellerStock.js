@@ -19,11 +19,6 @@ const SellerStockSchema = new Schema(
       min: 0,
       default: 0,
     },
-    isAvailable: {
-      type: Boolean,
-      required: true,
-      default: true,
-    },
     lastTransferDate: {
       type: Date,
       default: Date.now,
@@ -78,20 +73,51 @@ SellerStockSchema.statics.findByProduct = function (productId) {
   );
 };
 
-// Instance method to update quantity
-SellerStockSchema.methods.updateQuantity = function (quantity, toSave = true) {
-  this.quantity = Math.max(0, this.quantity + quantity);
-  this.lastTransferDate = new Date();
-  return toSave ? this.save() : Promise.resolve();
+SellerStockSchema.statics.increaseQuantity = function (
+  sellerId,
+  productId,
+  amount,
+  session,
+) {
+  if (amount <= 0) {
+    throw new Error("Amount must be greater than zero");
+  }
+  return this.findOneAndUpdate(
+    {
+      seller: sellerId,
+      product: productId,
+    },
+    {
+      $inc: { quantity: amount },
+    },
+    {
+      new: true,
+      upsert: true,
+      session,
+    },
+  );
 };
 
-// Instance method to update isAvailable status
-SellerStockSchema.methods.updateIsAvailable = function (
-  isAvailable,
-  toSave = true,
+SellerStockSchema.statics.decreaseQuantity = function (
+  sellerId,
+  productId,
+  amount,
+  session,
 ) {
-  this.isAvailable = isAvailable;
-  return toSave ? this.save() : Promise.resolve();
+  if (amount <= 0) {
+    throw new Error("Amount must be greater than zero");
+  }
+  return this.findOneAndUpdate(
+    {
+      seller: sellerId,
+      product: productId,
+      quantity: { $gte: amount },
+    },
+    {
+      $inc: { quantity: -amount },
+    },
+    { new: true, session },
+  );
 };
 
 // Pre-save middleware to update lastTransferDate when quantity changes

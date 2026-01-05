@@ -159,7 +159,7 @@
 
 /**
  * @swagger
- * /api/admin/sellers/{sellerId}/products/{productId}:
+ * /api/admin/sellers/{sellerId}/products/{productId}/assign:
  *   post:
  *     tags:
  *       - Admin - Product Assignment
@@ -201,6 +201,17 @@
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+
+
+/**
+ * @swagger
+ * /api/admin/sellers/{sellerId}/products/{productId}/unassign:
  *   delete:
  *     tags:
  *       - Admin - Product Assignment
@@ -470,9 +481,6 @@
  */
 
 /**
- */
-
-/**
  * @swagger
  * /api/admin/reports:
  *   get:
@@ -544,44 +552,6 @@
  *         description: Admin access required
  *       404:
  *         description: Seller not found
- *       500:
- *         description: Server error
- */
-
-/**
- * @swagger
- * /api/admin/seller-stocks/{stockId}:
- *   delete:
- *     tags:
- *       - Admin - Stock Management
- *     summary: Delete seller stock record (Admin only)
- *     description: Deletes a seller stock record and automatically manages seller/product assignments if this was the last stock record for that product
- *     security:
- *       - TelegramAuth: []
- *     parameters:
- *       - in: path
- *         name: stockId
- *         required: true
- *         schema:
- *           type: string
- *         description: SellerStock ID to delete
- *     responses:
- *       200:
- *         description: Seller stock deleted successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message:
- *                   type: string
- *                   example: "Seller stock deleted successfully"
- *       401:
- *         description: Authentication required
- *       403:
- *         description: Admin access required
- *       404:
- *         description: Seller stock not found
  *       500:
  *         description: Server error
  */

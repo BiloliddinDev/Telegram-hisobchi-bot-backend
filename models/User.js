@@ -9,6 +9,7 @@ const UserSchema = new mongoose.Schema({
   username: {
     type: String,
     default: "",
+    index: true,
   },
   firstName: {
     type: String,
@@ -40,15 +41,10 @@ const UserSchema = new mongoose.Schema({
     type: Boolean,
     default: false,
   },
-  assignedProducts: [
-    {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Product",
-    },
-  ],
   createdAt: {
     type: Date,
     default: Date.now,
+    index: true,
   },
   updatedAt: {
     type: Date,

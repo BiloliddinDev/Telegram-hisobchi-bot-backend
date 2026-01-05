@@ -22,10 +22,7 @@ router.get("/", authenticate, isAdmin, async (req, res) => {
     const options = {
       page: parseInt(page),
       limit: parseInt(limit),
-      populate: [
-        "category",
-        { path: "assignedSellers", select: "username firstName lastName" },
-      ],
+      populate: ["category"],
       sort: { createdAt: -1 },
     };
     const products = await Product.paginate(filter, options);
@@ -61,7 +58,7 @@ router.post("/", authenticate, isAdmin, validateProduct, async (req, res) => {
       price,
       costPrice,
       category,
-      stock,
+      warehouseQuantity,
       image,
       sku,
       color,
@@ -78,7 +75,7 @@ router.post("/", authenticate, isAdmin, validateProduct, async (req, res) => {
       price,
       costPrice,
       category,
-      count: stock,
+      warehouseQuantity,
       image,
       sku,
       color,

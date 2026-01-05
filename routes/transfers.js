@@ -1,11 +1,13 @@
 const express = require("express");
 const router = express.Router();
+const mongoose = require("mongoose");
 const Transfer = require("../models/Transfer");
 const Product = require("../models/Product");
 const User = require("../models/User");
 const SellerStock = require("../models/SellerStock");
+const SellerProduct = require("../models/SellerProduct");
 const { authenticate, isAdmin } = require("../middleware/auth");
-const { manageAssignmentSellerAndProduct } = require("./utils");
+const { createSellerProduct, transferStock } = require("./utils");
 
 router.use(authenticate);
 router.use(isAdmin);
@@ -25,9 +27,16 @@ router.get("/", async (req, res) => {
 
 // Create new transfer(s)
 router.post("/", async (req, res) => {
+  const session = await mongoose.startSession();
+
   try {
     const { sellerId, items } = req.body; // items: [{ productId, quantity }]
 
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: "Items array is required" });
+    }
+
+    // Validate seller exists
     const seller = await User.findById(sellerId);
     if (!seller || seller.role !== "seller") {
       return res.status(404).json({ error: "Sotuvchi topilmadi" });
@@ -35,123 +44,89 @@ router.post("/", async (req, res) => {
 
     const createdTransfers = [];
 
-    for (const item of items) {
-      const product = await Product.findById(item.productId);
-      if (!product) {
-        throw new Error(`Mahsulot topilmadi: ${item.productId}`);
+    await session.withTransaction(async () => {
+      // Process each item in the transfer
+      for (const item of items) {
+        const { productId, quantity } = item;
+
+        if (!quantity || quantity <= 0) {
+          throw new Error(`Invalid quantity for product ${productId}`);
+        }
+
+        // Find and validate product
+        const product = await Product.findById(productId).session(session);
+        if (!product) {
+          throw new Error(`Mahsulot topilmadi: ${productId}`);
+        }
+
+        // Check warehouse stock availability
+        if (product.warehouseQuantity < quantity) {
+          throw new Error(
+            `Omborda yetarli mahsulot yo'q: ${product.name}. Mavjud: ${product.warehouseQuantity}, So'ralgan: ${quantity}`,
+          );
+        }
+
+        // Check if seller-product relationship exists
+        let sellerProduct = await SellerProduct.findBySellerAndProduct(
+          seller._id,
+          product._id,
+        ).session(session);
+
+        // If relationship doesn't exist or is inactive, create/activate it
+        if (!sellerProduct) {
+          sellerProduct = await SellerProduct.create(
+            [
+              {
+                sellerId: seller._id,
+                productId: product._id,
+                isActive: true,
+                assignAt: new Date(),
+                unassignAt: null,
+              },
+            ],
+            { session },
+          );
+          sellerProduct = sellerProduct[0];
+        } else if (!sellerProduct.isActive) {
+          // Reactivate if it was previously unassigned
+          await sellerProduct.assign(true, session);
+        }
+
+        // Transfer stock from warehouse to seller using utility function
+        await transferStock(seller._id, product._id, quantity, session);
+
+        // Create transfer record
+        const transfer = await Transfer.create(
+          [
+            {
+              sellerId: seller._id,
+              productId: product._id,
+              quantity: quantity,
+              type: "transfer",
+              status: "completed",
+            },
+          ],
+          { session },
+        );
+        createdTransfers.push(transfer[0]);
       }
+    });
 
-      if (product.count < item.quantity) {
-        throw new Error(`Omborda yetarli mahsulot yo'q: ${product.name}`);
-      }
+    await session.endSession();
 
-      // Update productId count
-      product.count -= item.quantity;
-      await product.save();
-
-      // Update seller stock using SellerStock model
-      const existingStock = await SellerStock.findBySellerAndProduct(
-        sellerId,
-        product._id,
-      );
-
-      if (existingStock) {
-        await existingStock.updateQuantity(item.quantity);
-      } else {
-        await SellerStock.create({
-          seller: sellerId,
-          product: product._id,
-          quantity: item.quantity,
-        });
-      }
-
-      // assign product to seller
-      await manageAssignmentSellerAndProduct(
-        seller,
-        product,
-        (isSaveSeller = false),
-        (isSaveProduct = true),
-        (toAssign = true),
-      );
-
-      // Create transfer record
-      const transfer = await Transfer.create({
-        sellerId: sellerId,
-        productId: product._id,
-        quantity: item.quantity,
-        type: "transfer",
-      });
-      createdTransfers.push(transfer);
-    }
-
-    await seller.save();
+    // Populate transfer details for response
+    const populatedTransfers = await Transfer.find({
+      _id: { $in: createdTransfers.map((t) => t._id) },
+    })
+      .populate("sellerId", "username firstName lastName")
+      .populate("productId", "name sku");
 
     res.status(201).json({
       message: "Muvaffaqiyatli biriktirildi",
-      transfers: createdTransfers,
+      transfers: populatedTransfers,
     });
   } catch (error) {
-    res.status(400).json({ error: error.message });
-  }
-});
-
-// Return transfer
-router.post("/:id/return", async (req, res) => {
-  try {
-    const { quantity } = req.body; // Allow partial returns
-    const transfer = await Transfer.findById(req.params.id);
-
-    if (!transfer) {
-      return res.status(404).json({ error: "Transfer not found" });
-    }
-
-    if (transfer.type === "return") {
-      return res.status(400).json({ error: "Cannot return a return transfer" });
-    }
-
-    const returnQuantity = quantity || transfer.quantity; // Full return if no quantity specified
-
-    if (returnQuantity > transfer.quantity) {
-      return res
-        .status(400)
-        .json({ error: "Cannot return more than original transfer" });
-    }
-
-    const sellerStock = await SellerStock.findBySellerAndProduct(
-      transfer.sellerId,
-      transfer.productId,
-    );
-
-    if (!sellerStock || sellerStock.quantity < returnQuantity) {
-      return res.status(400).json({
-        error: "Seller doesn't have enough stock to return",
-      });
-    }
-
-    // Return to warehouse
-    const product = await Product.findById(transfer.productId);
-    product.count += returnQuantity;
-    await product.save();
-
-    // Update seller stock
-    await sellerStock.updateQuantity(-returnQuantity);
-
-    // Create return transfer record
-    const returnTransfer = await Transfer.create({
-      sellerId: transfer.sellerId,
-      productId: transfer.productId,
-      quantity: returnQuantity,
-      type: "return",
-      relatedTransfer: transfer._id, // 🆕 Link to original
-    });
-
-    res.json({
-      message: "Stock returned to warehouse",
-      originalTransfer: transfer,
-      returnTransfer,
-      returnedQuantity: returnQuantity,
-    });
-  } catch (error) {
+    await session.endSession();
     res.status(400).json({ error: error.message });
   }
 });

@@ -103,7 +103,7 @@
  *               - price
  *               - costPrice
  *               - category
- *               - stock
+ *               - warehouseQuantity
  *             properties:
  *               name:
  *                 type: string
@@ -125,7 +125,7 @@
  *                 type: string
  *                 description: Category ID
  *                 example: "507f1f77bcf86cd799439011"
- *               stock:
+ *               warehouseQuantity:
  *                 type: number
  *                 description: Initial warehouse stock
  *                 example: 100

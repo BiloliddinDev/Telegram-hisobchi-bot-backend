@@ -100,14 +100,6 @@ const options = {
               enum: ["admin", "seller"],
               description: "User role",
             },
-            assignedProducts: {
-              type: "array",
-              items: {
-                type: "object",
-                $ref: "#/components/schemas/Product",
-              },
-              description: "Products assigned to seller",
-            },
             isActive: {
               type: "boolean",
               description: "User active status",
@@ -201,17 +193,9 @@ const options = {
               type: "boolean",
               description: "Product active status",
             },
-            assignedSellers: {
-              type: "array",
-              items: {
-                type: "object",
-                $ref: "#/components/schemas/UserPublic",
-              },
-              description: "Sellers assigned to this product",
-            },
           },
         },
-        SellerStock: {
+        SellerProduct: {
           type: "object",
           properties: {
             _id: {

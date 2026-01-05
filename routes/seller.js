@@ -13,9 +13,13 @@ router.use(isSeller);
 // Get sellerId's assigned products
 router.get("/products", async (req, res) => {
   try {
-    console.log("Fetching seller's products: ", req.user._id);
-    const user = await User.findById(req.user._id).populate("assignedProducts");
-    res.json({ products: user.assignedProducts });
+    const products = await SellerProduct.find({
+      sellerId: req.user._id,
+      isActive: true,
+    })
+      .populate("productId")
+      .select("productId assignAt");
+    res.json({ products: products });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

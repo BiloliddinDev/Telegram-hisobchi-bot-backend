@@ -36,10 +36,29 @@ function extractEndpointsFromRoutes() {
     const content = fs.readFileSync(filePath, "utf8");
     const lines = content.split("\n");
 
-    lines.forEach((line, index) => {
-      const match = line.match(
+    for (let index = 0; index < lines.length; index++) {
+      const line = lines[index];
+
+      // Try to match single-line route definition
+      let match = line.match(
         /router\.(get|post|put|patch|delete)\s*\(\s*["']([^"']+)["']/,
       );
+
+      // If no match, check if this is a multiline route definition
+      if (
+        !match &&
+        line.match(/router\.(get|post|put|patch|delete)\s*\(\s*$/)
+      ) {
+        const methodMatch = line.match(/router\.(get|post|put|patch|delete)/);
+        if (methodMatch && index + 1 < lines.length) {
+          const nextLine = lines[index + 1];
+          const pathMatch = nextLine.match(/^\s*["']([^"']+)["']/);
+          if (pathMatch) {
+            match = [null, methodMatch[1], pathMatch[1]];
+          }
+        }
+      }
+
       if (match) {
         const method = match[1].toUpperCase();
         let endpoint = match[2];
@@ -63,7 +82,7 @@ function extractEndpointsFromRoutes() {
           line: index + 1,
         });
       }
-    });
+    }
   });
 
   return endpoints;
