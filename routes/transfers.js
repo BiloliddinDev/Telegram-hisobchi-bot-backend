@@ -4,10 +4,9 @@ const mongoose = require("mongoose");
 const Transfer = require("../models/Transfer");
 const Product = require("../models/Product");
 const User = require("../models/User");
-const SellerStock = require("../models/SellerStock");
 const SellerProduct = require("../models/SellerProduct");
 const { authenticate, isAdmin } = require("../middleware/auth");
-const { createSellerProduct, transferStock } = require("./utils");
+const { transferStock } = require("./utils");
 
 router.use(authenticate);
 router.use(isAdmin);
@@ -45,6 +44,22 @@ router.post("/", async (req, res) => {
     const createdTransfers = [];
 
     await session.withTransaction(async () => {
+      // Extract product IDs
+      const productIds = items.map((item) => item.productId);
+
+      // Get products
+      const products = await Product.find({
+        _id: { $in: productIds },
+      }).session(session);
+
+      // Turn to map
+      const productMap = new Map(products.map((p) => [p._id.toString(), p]));
+
+      // Validate products exist
+      if (products.length !== productIds.length) {
+        throw new Error("One or more products not found");
+      }
+
       // Process each item in the transfer
       for (const item of items) {
         const { productId, quantity } = item;
@@ -53,11 +68,8 @@ router.post("/", async (req, res) => {
           throw new Error(`Invalid quantity for product ${productId}`);
         }
 
-        // Find and validate product
-        const product = await Product.findById(productId).session(session);
-        if (!product) {
-          throw new Error(`Mahsulot topilmadi: ${productId}`);
-        }
+        // Get product from map
+        const product = productMap.get(productId.toString());
 
         // Check warehouse stock availability
         if (product.warehouseQuantity < quantity) {
@@ -74,19 +86,20 @@ router.post("/", async (req, res) => {
 
         // If relationship doesn't exist or is inactive, create/activate it
         if (!sellerProduct) {
-          sellerProduct = await SellerProduct.create(
-            [
-              {
-                sellerId: seller._id,
-                productId: product._id,
-                isActive: true,
-                assignAt: new Date(),
-                unassignAt: null,
-              },
-            ],
-            { session },
-          );
-          sellerProduct = sellerProduct[0];
+          sellerProduct = (
+            await SellerProduct.create(
+              [
+                {
+                  sellerId: seller._id,
+                  productId: product._id,
+                  isActive: true,
+                  assignAt: new Date(),
+                  unassignAt: null,
+                },
+              ],
+              { session },
+            )
+          )[0];
         } else if (!sellerProduct.isActive) {
           // Reactivate if it was previously unassigned
           await sellerProduct.assign(true, session);
@@ -96,23 +109,23 @@ router.post("/", async (req, res) => {
         await transferStock(seller._id, product._id, quantity, session);
 
         // Create transfer record
-        const transfer = await Transfer.create(
-          [
-            {
-              sellerId: seller._id,
-              productId: product._id,
-              quantity: quantity,
-              type: "transfer",
-              status: "completed",
-            },
-          ],
-          { session },
-        );
-        createdTransfers.push(transfer[0]);
+        const transfer = (
+          await Transfer.create(
+            [
+              {
+                sellerId: seller._id,
+                productId: product._id,
+                quantity: quantity,
+                type: "transfer",
+                status: "completed",
+              },
+            ],
+            { session },
+          )
+        )[0];
+        createdTransfers.push(transfer);
       }
     });
-
-    await session.endSession();
 
     // Populate transfer details for response
     const populatedTransfers = await Transfer.find({
@@ -122,12 +135,13 @@ router.post("/", async (req, res) => {
       .populate("productId", "name sku");
 
     res.status(201).json({
-      message: "Muvaffaqiyatli biriktirildi",
+      message: "Successfully created transfers",
       transfers: populatedTransfers,
     });
   } catch (error) {
-    await session.endSession();
     res.status(400).json({ error: error.message });
+  } finally {
+    await session.endSession();
   }
 });
 

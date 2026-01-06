@@ -208,7 +208,6 @@
  *             schema:
  *               $ref: '#/components/schemas/Error'
 
-
 /**
  * @swagger
  * /api/admin/sellers/{sellerId}/products/{productId}/unassign:

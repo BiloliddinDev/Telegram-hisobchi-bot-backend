@@ -3,11 +3,7 @@ class ReportDTO {
     this.period = {
       startDate,
       endDate,
-      year: startDate.getFullYear(),
-      month: startDate.getMonth() + 1,
-      monthName: startDate.toLocaleString("en-US", { month: "long" }),
     };
-
     this.summary = this._calculateSummary(sales);
     this.salesBySeller = this._groupSalesBySeller(sales);
     this.salesByProduct = this._groupSalesByProduct(sales);
@@ -15,23 +11,17 @@ class ReportDTO {
     this.dailySales = this._getDailySales(sales, startDate, endDate);
   }
 
-  _calculateSummary(sales) {
-    const uniqueSellers = new Set();
-    const uniqueProducts = new Set();
-
-    sales.forEach((sale) => {
-      if (sale.sellerId?._id) uniqueSellers.add(sale.sellerId._id.toString());
-      if (sale.productId?._id)
-        uniqueProducts.add(sale.productId._id.toString());
-    });
-
+  _calculateSummary(sales, sellers, products) {
     return {
       totalSales: sales.length,
       totalRevenue: sales.reduce(
         (sum, sale) => sum + (sale.totalAmount || 0),
         0,
       ),
-      totalQuantity: sales.reduce((sum, sale) => sum + (sale.quantity || 0), 0),
+      totalSalesQuantity: sales.reduce(
+        (sum, sale) => sum + (sale.quantity || 0),
+        0,
+      ),
       totalSellers: uniqueSellers.size,
       totalProducts: uniqueProducts.size,
       averageSaleAmount:

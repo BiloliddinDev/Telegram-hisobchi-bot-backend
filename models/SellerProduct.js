@@ -38,21 +38,23 @@ SellerProductSchema.statics.findBySellerAndProduct = function (
   return this.findOne({ sellerId: sellerId, productId: productId });
 };
 
-SellerProductSchema.methods.assign = function (toSave = true, session) {
+SellerProductSchema.methods.assign = async function (toSave = true, session) {
   this.isActive = true;
   this.assignAt = new Date();
   this.unassignAt = null;
   if (toSave) {
-    return this.save({ session });
+    await this.save({ session });
   }
+  return this;
 };
 
-SellerProductSchema.methods.unassign = function (toSave = true, session) {
+SellerProductSchema.methods.unassign = async function (toSave = true, session) {
   this.isActive = false;
   this.unassignAt = Date.now();
   if (toSave) {
-    return this.save({ session });
+    await this.save({ session });
   }
+  return this;
 };
 
 const SellerProduct = mongoose.model("SellerProduct", SellerProductSchema);

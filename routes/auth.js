@@ -8,9 +8,7 @@ const { authenticate } = require("../middleware/auth");
 router.get("/me", authenticate, async (req, res) => {
   try {
     console.log("Fetching user for ID:", req.user._id);
-    const user = await User.findById(req.user._id)
-      .populate("assignedProducts", "name price description image")
-      .select("-__v");
+    const user = await User.findById(req.user._id).select("-__v");
 
     if (!user) {
       console.log("User not found in DB for ID:", req.user._id);
@@ -21,7 +19,9 @@ router.get("/me", authenticate, async (req, res) => {
     res.json({ user });
   } catch (error) {
     console.error("Error in /auth/me:", error);
-    res.status(500).json({ error: error.message || "Server xatosi", stack: error.stack });
+    res
+      .status(500)
+      .json({ error: error.message || "Server xatosi", stack: error.stack });
   }
 });
 
@@ -32,7 +32,7 @@ router.put("/me", authenticate, async (req, res) => {
     const user = await User.findByIdAndUpdate(
       req.user._id,
       { username, firstName, lastName },
-      { new: true }
+      { new: true },
     ).select("-__v");
 
     res.json({ user });

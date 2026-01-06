@@ -189,7 +189,7 @@
  *               - price
  *               - costPrice
  *               - category
- *               - stock
+ *               - warehouseQuantity
  *             properties:
  *               name:
  *                 type: string
@@ -206,7 +206,83 @@
  *               category:
  *                 type: string
  *                 description: Category ID
- *               stock:
+ *               warehouseQuantity:
+ *                 type: number
+ *                 description: Warehouse stock
+ *               image:
+ *                 type: string
+ *                 description: Product image URL
+ *               sku:
+ *                 type: string
+ *                 description: Product SKU
+ *               color:
+ *                 type: string
+ *                 description: Product color
+ *               isActive:
+ *                 type: boolean
+ *                 description: Product active status
+ *     responses:
+ *       200:
+ *         description: Product updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 product:
+ *                   $ref: '#/components/schemas/Product'
+ *       400:
+ *         description: Invalid input or category not found
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Admin access required
+ *       404:
+ *         description: Product not found
+ *       500:
+ *         description: Server error
+ */
+
+/**
+ * @swagger
+ * /api/products/{id}:
+ *   patch:
+ *     tags:
+ *       - Products
+ *     summary: Partial Update product (Admin only)
+ *     description: Partial Updates an existing product
+ *     security:
+ *       - TelegramAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Product ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 description: Product name
+ *               description:
+ *                 type: string
+ *                 description: Product description
+ *               price:
+ *                 type: number
+ *                 description: Selling price
+ *               costPrice:
+ *                 type: number
+ *                 description: Cost price
+ *               category:
+ *                 type: string
+ *                 description: Category ID
+ *               warehouseQuantity:
  *                 type: number
  *                 description: Warehouse stock
  *               image:

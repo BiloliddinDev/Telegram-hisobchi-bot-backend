@@ -179,13 +179,14 @@ router.delete(
           : "Product unassigned",
       });
     } catch (error) {
-      await session.endSession();
       res.status(500).json({ error: error.message });
+    } finally {
+      await session.endSession();
     }
   },
 );
 
-// Get monthly reports
+// Get reports
 router.get("/reports", async (req, res) => {
   try {
     const { start, end } = req.query;
@@ -341,8 +342,9 @@ router.patch("/seller-stocks/:stockId", async (req, res) => {
       message: "Stock quantity updated successfully",
     });
   } catch (error) {
-    await session.endSession();
     res.status(500).json({ error: error.message });
+  } finally {
+    await session.endSession();
   }
 });
 

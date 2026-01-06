@@ -52,20 +52,23 @@ const UserSchema = new mongoose.Schema({
   },
 });
 
-UserSchema.methods.inactivate = async function () {
+UserSchema.methods.inactivate = async function (toSave = true) {
   this.isActive = false;
-  await this.save();
+  if (toSave) await this.save();
+  return this;
 };
 
-UserSchema.methods.activate = async function () {
+UserSchema.methods.activate = async function (toSave = true) {
   this.isActive = true;
-  await this.save();
+  if (toSave) await this.save();
+  return this;
 };
 
-UserSchema.methods.delete = async function () {
+UserSchema.methods.delete = async function (toSave = true) {
   this.isDeleted = true;
   this.isActive = false;
-  await this.save();
+  if (toSave) await this.save();
+  return this;
 };
 
 UserSchema.pre("save", function (next) {

@@ -96,7 +96,7 @@ router.put("/:id", authenticate, isAdmin, validateProduct, async (req, res) => {
       price,
       costPrice,
       category,
-      stock,
+      warehouseQuantity,
       image,
       sku,
       color,
@@ -117,13 +117,64 @@ router.put("/:id", authenticate, isAdmin, validateProduct, async (req, res) => {
         price,
         costPrice,
         category,
-        count: stock,
+        warehouseQuantity,
         image,
         sku,
         color,
         isActive,
       },
-      { new: true },
+      { new: true, runValidators: true },
+    );
+
+    if (!product) {
+      return res.status(404).json({ error: "Product not found" });
+    }
+
+    res.json({ product });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Partial update product
+router.patch("/:id", authenticate, isAdmin, async (req, res) => {
+  try {
+    const allowedFields = [
+      "name",
+      "description",
+      "price",
+      "costPrice",
+      "category",
+      "warehouseQuantity",
+      "image",
+      "sku",
+      "color",
+      "isActive",
+    ];
+
+    const updates = {};
+
+    for (const field of allowedFields) {
+      if (req.body[field]) {
+        updates[field] = req.body[field];
+      }
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: "No valid fields to update" });
+    }
+
+    if (updates.category) {
+      const categoryExists = await Category.findById({ _id: updates.category });
+      if (!categoryExists) {
+        return res.status(404).json({ error: "Category not found" });
+      }
+    }
+
+    const product = await Product.findByIdAndUpdate(
+      req.params.id,
+      { $set: updates },
+      { new: true, runValidators: true },
     );
 
     if (!product) {
