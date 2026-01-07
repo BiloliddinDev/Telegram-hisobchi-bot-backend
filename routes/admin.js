@@ -252,8 +252,8 @@ router.patch("/seller-stocks/:stockId", async (req, res) => {
         await Transfer.create(
           [
             {
-              sellerId: sellerStock.seller._id,
-              productId: sellerStock.product._id,
+              seller: sellerStock.seller._id,
+              product: sellerStock.product._id,
               quantity: Math.abs(difference),
               type: difference > 0 ? "transfer" : "return",
               status: "completed",
