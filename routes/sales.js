@@ -3,7 +3,7 @@ const router = express.Router();
 const Sale = require("../models/Sale");
 const Product = require("../models/Product");
 const SellerStock = require("../models/SellerStock");
-const { authenticate } = require("../middleware/auth");
+const { authenticate, isAdmin } = require("../middleware/auth");
 const { validateSale } = require("../middleware/validation");
 
 // Create sale

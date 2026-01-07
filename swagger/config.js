@@ -173,7 +173,7 @@ const options = {
               $ref: "#/components/schemas/Category",
               description: "Product category",
             },
-            count: {
+            warehouseQuantity: {
               type: "number",
               description: "Warehouse stock count",
             },
