@@ -73,46 +73,59 @@ SellerStockSchema.statics.findByProduct = function (productId) {
   );
 };
 
-SellerStockSchema.statics.increaseQuantity = function (
+SellerStockSchema.statics.increaseQuantity = function ({
   sellerId,
   productId,
+  sellerStockId = null,
   amount,
   session,
-) {
+}) {
   if (amount <= 0) {
     throw new Error("Amount must be greater than zero");
   }
+
+  filtersAndValidators = {};
+  if (sellerStockId) {
+    filtersAndValidators._id = sellerStockId;
+  } else {
+    filtersAndValidators.seller = sellerId;
+    filtersAndValidators.product = productId;
+  }
+
   return this.findOneAndUpdate(
-    {
-      seller: sellerId,
-      product: productId,
-    },
+    filtersAndValidators,
     {
       $inc: { quantity: amount },
     },
     {
       new: true,
-      upsert: true,
       session,
     },
   );
 };
 
-SellerStockSchema.statics.decreaseQuantity = function (
+SellerStockSchema.statics.decreaseQuantity = function ({
   sellerId,
   productId,
+  sellerStockId = null,
   amount,
   session,
-) {
+}) {
   if (amount <= 0) {
     throw new Error("Amount must be greater than zero");
   }
+  filtersAndValidators = {};
+  if (sellerStockId) {
+    filtersAndValidators._id = sellerStockId;
+  } else {
+    filtersAndValidators.seller = sellerId;
+    filtersAndValidators.product = productId;
+  }
+
+  filtersAndValidators.quantity = { $gte: amount };
+
   return this.findOneAndUpdate(
-    {
-      seller: sellerId,
-      product: productId,
-      quantity: { $gte: amount },
-    },
+    filtersAndValidators,
     {
       $inc: { quantity: -amount },
     },

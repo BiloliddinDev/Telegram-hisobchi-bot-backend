@@ -69,28 +69,28 @@ async function inactivateSellerProduct(sellerId, productId, session) {
 async function transferStock(sellerId, productId, amount, session) {
   if (amount > 0) {
     // warehouse → seller
-    const sellerUpdated = await SellerStock.increaseQuantity(
-      sellerId,
-      productId,
-      amount,
-      session,
-    );
+    const sellerUpdated = await SellerStock.increaseQuantity({
+      sellerId: sellerId,
+      productId: productId,
+      amount: Math.abs(amount),
+      session: session,
+    });
     if (!sellerUpdated) throw new Error("Seller stock increase failed");
 
     const warehouseUpdated = await Product.decreaseWarehouseQuantity(
       productId,
-      amount,
+      Math.abs(amount),
       session,
     );
     if (!warehouseUpdated) throw new Error("Insufficient warehouse stock");
   } else if (amount < 0) {
     // seller -> warehouse
-    const sellerUpdated = await SellerStock.decreaseQuantity(
-      sellerId,
-      productId,
-      Math.abs(amount),
-      session,
-    );
+    const sellerUpdated = await SellerStock.decreaseQuantity({
+      sellerId: sellerId,
+      productId: productId,
+      amount: Math.abs(amount),
+      session: session,
+    });
     if (!sellerUpdated) throw new Error("Seller stock decrease failed");
 
     const warehouseUpdated = await Product.increaseWarehouseQuantity(

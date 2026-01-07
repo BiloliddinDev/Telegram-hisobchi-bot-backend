@@ -3,11 +3,18 @@ const router = express.Router();
 const Sale = require("../models/Sale");
 const Product = require("../models/Product");
 const SellerStock = require("../models/SellerStock");
-const { authenticate, isAdmin } = require("../middleware/auth");
+const { authenticate, isSeller } = require("../middleware/auth");
 const { validateSale } = require("../middleware/validation");
+const SellerProduct = require("../models/SellerProduct");
+const mongoose = require("mongoose");
+
+// All admin routes require authentication and admin role
+router.use(authenticate);
+router.use(isSeller);
 
 // Create sale
-router.post("/", authenticate, validateSale, async (req, res) => {
+router.post("/", validateSale, async (req, res) => {
+  const session = await mongoose.startSession();
   try {
     const { productId, quantity, price, customerName, customerPhone, notes } =
       req.body;
@@ -18,79 +25,71 @@ router.post("/", authenticate, validateSale, async (req, res) => {
     }
 
     // Check if seller has access to this productId
-    if (req.user.role === "seller") {
-      const hasAccess = req.user.assignedProducts.some(
-        (id) => id.toString() === productId,
-      );
-      if (!hasAccess) {
-        return res
-          .status(403)
-          .json({ error: "You do not have access to this productId" });
-      }
+    const sellerProductExists = await SellerProduct.findBySellerAndProduct(
+      req.user._id,
+      productId,
+    );
+    if (!sellerProductExists) {
+      return res
+        .status(403)
+        .json({ error: "You do not have access to this productId" });
     }
 
     // Check count
-    if (req.user.role === "seller") {
-      const sellerStock = await SellerStock.findBySellerAndProduct(
-        req.user._id,
-        productId,
-      );
-      if (!sellerStock || sellerStock.quantity < quantity) {
-        return res.status(400).json({ error: "Sizda yetarli mahsulot yo'q" });
-      }
-    } else if (product.count < quantity) {
-      return res.status(400).json({ error: "Omborda yetarli mahsulot yo'q" });
+    const sellerStock = await SellerStock.findBySellerAndProduct(
+      req.user._id,
+      productId,
+    );
+    if (!sellerStock || sellerStock.quantity < quantity) {
+      return res.status(400).json({ error: "Sizda yetarli mahsulot yo'q" });
     }
 
     const totalAmount = price * quantity;
 
-    const sale = await Sale.create({
-      sellerId: req.user._id,
-      productId: productId,
-      quantity,
-      price,
-      totalAmount,
-      customerName,
-      customerPhone,
-      notes,
-    });
-
-    // Update stocks
-    if (req.user.role === "seller") {
-      const sellerStock = await SellerStock.findBySellerAndProduct(
-        req.user._id,
-        productId,
+    await session.withTransaction(async () => {
+      await Sale.create(
+        [
+          {
+            seller: req.user._id,
+            product: productId,
+            quantity,
+            price,
+            totalAmount,
+            customerName,
+            customerPhone,
+            notes,
+          },
+        ],
+        { session },
       );
-      if (sellerStock) {
-        await sellerStock.updateQuantity(-quantity);
-      }
-    } else {
-      await Product.findByIdAndUpdate(productId, {
-        $inc: { count: -quantity },
-      });
-    }
 
-    const populatedSale = await Sale.findById(sale._id)
-      .populate("product", "name price image")
-      .populate("seller", "username firstName lastName");
+      const isDecreased = await SellerStock.decreaseQuantity({
+        sellerStock: sellerStock._id,
+        amount: Math.abs(quantity),
+        session: session,
+      });
+
+      if (!isDecreased) {
+        throw new Error("Sizda yetarli mahsulot yo'q");
+      }
+    });
 
     res.status(201).json({ sale: populatedSale });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  } finally {
+    await session.endSession();
   }
 });
 
-// Get all sales (admin only)
-router.get("/", authenticate, async (req, res) => {
+// Get all sales
+router.get("/", async (req, res) => {
   try {
+    const { startDate, endDate } = req.query;
     let query = {};
 
-    // Sellers can only see their own sales
-    if (req.user.role === "seller") {
-      query.sellerId = req.user._id;
-    }
+    query.sellerId = req.user._id;
 
-    const { startDate, endDate } = req.query;
     if (startDate && endDate) {
       query.timestamp = {
         $gte: new Date(startDate),
@@ -110,22 +109,17 @@ router.get("/", authenticate, async (req, res) => {
 });
 
 // Get single sale
-router.get("/:id", authenticate, async (req, res) => {
+router.get("/:id", async (req, res) => {
   try {
-    const sale = await Sale.findById(req.params.id)
+    const sale = await Sale.findOne({
+      _id: req.params.id,
+      seller: req.user._id,
+    })
       .populate("seller", "username firstName lastName")
       .populate("product", "name price image");
 
     if (!sale) {
       return res.status(404).json({ error: "Sale not found" });
-    }
-
-    // Sellers can only see their own sales
-    if (
-      req.user.role === "seller" &&
-      sale.seller._id.toString() !== req.user._id.toString()
-    ) {
-      return res.status(403).json({ error: "Access denied" });
     }
 
     res.json({ sale });

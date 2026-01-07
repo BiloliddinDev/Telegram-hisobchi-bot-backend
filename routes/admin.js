@@ -166,6 +166,25 @@ router.get("/sellers/:sellerId/stocks", async (req, res) => {
   }
 });
 
+router.get("/sellers/:sellerId/sales", async (req, res) => {
+  try {
+    const { sellerId } = req.params;
+
+    const sales = await Sale.findBySeller(sellerId);
+
+    if (!sales || sales.length === 0) {
+      return res.json({
+        sales: [],
+        message: "No sales found for this seller",
+      });
+    }
+
+    res.json({ sales });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Get stocks for a specific product
 router.get("/products/:productId/stocks", async (req, res) => {
   try {
