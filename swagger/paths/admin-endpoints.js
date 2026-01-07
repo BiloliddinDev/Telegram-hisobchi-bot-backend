@@ -30,6 +30,69 @@
 
 /**
  * @swagger
+ * /api/admin/sellers/{id}:
+ *   get:
+ *     tags:
+ *       - Admin - User Management
+ *     summary: Get specific seller
+ *     description: Returns a specific seller by ID
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *     security:
+ *       - TelegramAuth: []
+ *     responses:
+ *       200:
+ *         description: Seller retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/User'
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Admin access required
+ *       404:
+ *         description: Seller not found
+ *       500:
+ *         description: Server error
+ */
+
+/**
+ * @swagger
+ * /api/admin/sellers:
+ *   get:
+ *     tags:
+ *       - Admin - User Management
+ *     summary: Get all sellers
+ *     description: Returns a list of all sellers in the system
+ *     security:
+ *       - TelegramAuth: []
+ *     responses:
+ *       200:
+ *         description: Sellers retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 sellers:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/User'
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Admin access required
+ *       500:
+ *         description: Server error
+ */
+
+/**
+ * @swagger
  * /api/admin/sellers:
  *   post:
  *     tags:
@@ -446,37 +509,37 @@
 
 /**
  * @swagger
- * /api/admin/products/{productId}/stocks:
+ * /api/admin/sellers/{sellerId}/products:
  *   get:
  *     tags:
- *       - Admin - Stock Management
- *     summary: Get stocks for specific product
- *     description: Returns all seller stock records for a specific product
+ *        - Admin - Product Management
+ *     summary: Get products for specific seller
+ *     description: Returns all products for a specific seller
  *     security:
  *       - TelegramAuth: []
  *     parameters:
  *       - in: path
- *         name: productId
+ *         name: sellerId
  *         required: true
  *         schema:
  *           type: string
- *         description: Product ID
+ *         description: Seller ID
  *     responses:
  *       200:
- *         description: Product stocks retrieved successfully
+ *         description: Seller details retrieved successfully
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
- *                 productStocks:
+ *                 products:
  *                   type: array
  *                   items:
- *                     $ref: '#/components/schemas/SellerStock'
+ *                     $ref: '#/components/schemas/Product'
  *                 message:
  *                   type: string
- *                   description: Message if no stocks found
- *                   example: "No stocks found for this product"
+ *                   description: Message if no products found
+ *                   example: "No products found for this seller"
  */
 
 /**

@@ -2,13 +2,13 @@ const mongoose = require("mongoose");
 
 const transferSchema = new mongoose.Schema(
   {
-    sellerId: {
+    seller: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
       index: true,
     },
-    productId: {
+    product: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Product",
       required: true,
@@ -36,5 +36,5 @@ const transferSchema = new mongoose.Schema(
   },
   { timestamps: true },
 );
-transferSchema.index({ sellerId: 1, productId: 1 }); // all transfers for seller + product
+transferSchema.index({ seller: 1, product: 1 }); // all transfers for seller + product
 module.exports = mongoose.model("Transfer", transferSchema);

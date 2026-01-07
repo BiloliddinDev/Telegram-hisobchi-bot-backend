@@ -34,8 +34,8 @@ router.get("/", authenticate, async (req, res) => {
     query.timestamp = { $gte: startDate, $lte: endDate };
 
     const sales = await Sale.find(query)
-      .populate("sellerId", "username firstName lastName")
-      .populate("productId", "name price")
+      .populate("seller", "username firstName lastName")
+      .populate("product", "name price")
       .sort({ timestamp: -1 });
 
     const totalSales = sales.length;

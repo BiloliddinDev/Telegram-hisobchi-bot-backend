@@ -191,10 +191,10 @@
             "type": "string",
             "description": "Sale ID"
           },
-          "sellerId": {
+          "seller": {
             "$ref": "#/components/schemas/User"
           },
-          "productId": {
+          "product": {
             "$ref": "#/components/schemas/Product"
           },
           "quantity": {
@@ -235,11 +235,11 @@
             "type": "string",
             "description": "Transfer ID"
           },
-          "sellerId": {
+          "seller": {
             "type": "string",
             "description": "Seller ID"
           },
-          "productId": {
+          "product": {
             "type": "string",
             "description": "Product ID"
           },

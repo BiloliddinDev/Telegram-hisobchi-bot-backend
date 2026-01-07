@@ -203,15 +203,53 @@ const options = {
               description: "SellerStock ID",
             },
             seller: {
-              $ref: "#/components/schemas/User",
+              type: "object",
+              $ref: "#/components/schemas/UserPublic",
             },
             product: {
+              type: "object",
               $ref: "#/components/schemas/Product",
             },
             quantity: {
               type: "number",
               description: "Stock quantity with seller",
               minimum: 0,
+            },
+            lastTransferDate: {
+              type: "string",
+              format: "date-time",
+              description: "Date of last transfer",
+            },
+            createdAt: {
+              type: "string",
+              format: "date-time",
+              description: "Creation date",
+            },
+            updatedAt: {
+              type: "string",
+              format: "date-time",
+              description: "Last update date",
+            },
+          },
+        },
+        SellerStock: {
+          type: "object",
+          properties: {
+            _id: {
+              type: "string",
+              description: "Seller stock ID",
+            },
+            seller: {
+              type: "object",
+              $ref: "#/components/schemas/UserPublic",
+            },
+            product: {
+              type: "object",
+              $ref: "#/components/schemas/Product",
+            },
+            quantity: {
+              type: "number",
+              description: "Stock quantity with seller",
             },
             lastTransferDate: {
               type: "string",
@@ -237,10 +275,12 @@ const options = {
               type: "string",
               description: "Sale ID",
             },
-            sellerId: {
-              $ref: "#/components/schemas/User",
+            seller: {
+              type: "object",
+              $ref: "#/components/schemas/UserPublic",
             },
-            productId: {
+            product: {
+              type: "object",
               $ref: "#/components/schemas/Product",
             },
             quantity: {
@@ -281,13 +321,13 @@ const options = {
               type: "string",
               description: "Transfer ID",
             },
-            sellerId: {
-              type: "string",
-              description: "Seller ID",
+            seller: {
+              type: "object",
+              $ref: "#/components/schemas/UserPublic",
             },
-            productId: {
-              type: "string",
-              description: "Product ID",
+            product: {
+              type: "object",
+              $ref: "#/components/schemas/Product",
             },
             quantity: {
               type: "number",

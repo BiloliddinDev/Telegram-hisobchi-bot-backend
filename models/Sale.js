@@ -2,13 +2,13 @@ const mongoose = require("mongoose");
 
 const saleSchema = new mongoose.Schema(
   {
-    sellerId: {
+    seller: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
       index: true,
     },
-    productId: {
+    product: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Product",
       required: true,
@@ -57,6 +57,6 @@ const saleSchema = new mongoose.Schema(
   },
 );
 
-saleSchema.index({ sellerId: 1, productId: 1 });
+saleSchema.index({ seller: 1, product: 1 });
 
 module.exports = mongoose.model("Sale", saleSchema);

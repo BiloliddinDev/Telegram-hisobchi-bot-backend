@@ -15,9 +15,10 @@ router.get("/", authenticate, isAdmin, async (req, res) => {
     const sellerStocks = await SellerStock.find()
       .populate("seller", "username firstName lastName telegramId")
       .populate("product", "name costPrice");
+
     const sales = await Sale.find()
-      .populate("productId")
-      .populate("sellerId", "username firstName lastName")
+      .populate("product")
+      .populate("seller", "username firstName lastName")
       .sort({ timestamp: -1 });
 
     let totalInventoryValue = 0;

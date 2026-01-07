@@ -15,8 +15,8 @@ async function createSellerProduct(seller, product, isActive = true) {
   }
 
   const existing = await SellerProduct.findOne({
-    sellerId: sellerDoc._id,
-    productId: productDoc._id,
+    seller: sellerDoc._id,
+    product: productDoc._id,
   });
 
   if (existing) {
@@ -27,8 +27,8 @@ async function createSellerProduct(seller, product, isActive = true) {
   }
 
   const newSellerProduct = await SellerProduct.create({
-    sellerId: sellerDoc._id,
-    productId: productDoc._id,
+    seller: sellerDoc._id,
+    product: productDoc._id,
     isActive,
     assignAt: new Date(),
     unassignAt: null,
@@ -39,8 +39,8 @@ async function createSellerProduct(seller, product, isActive = true) {
 
 async function inactivateSellerProduct(sellerId, productId, session) {
   const sellerProduct = await SellerProduct.findOne({
-    sellerId,
-    productId,
+    seller: sellerId,
+    product: productId,
   });
 
   if (!sellerProduct) {

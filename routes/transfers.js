@@ -15,8 +15,8 @@ router.use(isAdmin);
 router.get("/", async (req, res) => {
   try {
     const transfers = await Transfer.find()
-      .populate("sellerId", "username firstName lastName")
-      .populate("productId", "name sku")
+      .populate("seller", "username firstName lastName")
+      .populate("product", "name sku")
       .sort({ createdAt: -1 });
     res.json({ transfers });
   } catch (error) {
@@ -90,8 +90,8 @@ router.post("/", async (req, res) => {
             await SellerProduct.create(
               [
                 {
-                  sellerId: seller._id,
-                  productId: product._id,
+                  seller: seller._id,
+                  product: product._id,
                   isActive: true,
                   assignAt: new Date(),
                   unassignAt: null,
@@ -113,8 +113,8 @@ router.post("/", async (req, res) => {
           await Transfer.create(
             [
               {
-                sellerId: seller._id,
-                productId: product._id,
+                seller: seller._id,
+                product: product._id,
                 quantity: quantity,
                 type: "transfer",
                 status: "completed",
@@ -131,8 +131,8 @@ router.post("/", async (req, res) => {
     const populatedTransfers = await Transfer.find({
       _id: { $in: createdTransfers.map((t) => t._id) },
     })
-      .populate("sellerId", "username firstName lastName")
-      .populate("productId", "name sku");
+      .populate("seller", "username firstName lastName")
+      .populate("product", "name sku");
 
     res.status(201).json({
       message: "Successfully created transfers",

@@ -22,8 +22,8 @@ class ReportDTO {
         (sum, sale) => sum + (sale.quantity || 0),
         0,
       ),
-      totalSellers: uniqueSellers.size,
-      totalProducts: uniqueProducts.size,
+      totalSellers: 0,
+      totalProducts: 0,
       averageSaleAmount:
         sales.length > 0
           ? sales.reduce((sum, sale) => sum + (sale.totalAmount || 0), 0) /
@@ -68,7 +68,6 @@ class ReportDTO {
       const stats = sellerData.stats;
       stats.averageSaleAmount =
         stats.totalSales > 0 ? stats.totalRevenue / stats.totalSales : 0;
-      stats.totalRevenue = stats.totalRevenue;
     });
 
     return Object.values(salesBySeller).sort(
@@ -109,7 +108,6 @@ class ReportDTO {
       const stats = productData.stats;
       stats.averageSaleAmount =
         stats.totalSales > 0 ? stats.totalRevenue / stats.totalSales : 0;
-      stats.totalRevenue = stats.totalRevenue;
     });
 
     return Object.values(salesByProduct).sort(
@@ -187,11 +185,6 @@ class ReportDTO {
         dailySales[saleDate].totalRevenue += sale.totalAmount || 0;
         dailySales[saleDate].totalQuantity += sale.quantity || 0;
       }
-    });
-
-    // Format currency for daily sales
-    Object.values(dailySales).forEach((day) => {
-      day.totalRevenue = day.totalRevenue;
     });
 
     return Object.values(dailySales).sort((a, b) =>

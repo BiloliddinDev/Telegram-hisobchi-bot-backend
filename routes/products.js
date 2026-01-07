@@ -35,9 +35,7 @@ router.get("/", authenticate, isAdmin, async (req, res) => {
 // Get single productId
 router.get("/:id", authenticate, async (req, res) => {
   try {
-    const product = await Product.findById(req.params.id)
-      .populate("category")
-      .populate("assignedSellers", "username firstName lastName");
+    const product = await Product.findById(req.params.id).populate("category");
 
     if (!product) {
       return res.status(404).json({ error: "Product not found" });
@@ -190,11 +188,11 @@ router.patch("/:id", authenticate, isAdmin, async (req, res) => {
 // Delete product (admin only)
 router.delete("/:id", authenticate, isAdmin, async (req, res) => {
   try {
-    const product = await Product.findByIdAndDelete(req.params.id);
+    // const product = await Product.findByIdAndDelete(req.params.id);
 
-    if (!product) {
-      return res.status(404).json({ error: "Product not found" });
-    }
+    // if (!product) {
+    //   return res.status(404).json({ error: "Product not found" });
+    // }
 
     res.json({ message: "Product deleted successfully" });
   } catch (error) {

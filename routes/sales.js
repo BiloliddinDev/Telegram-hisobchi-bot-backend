@@ -71,8 +71,8 @@ router.post("/", authenticate, validateSale, async (req, res) => {
     }
 
     const populatedSale = await Sale.findById(sale._id)
-      .populate("productId", "name price image")
-      .populate("sellerId", "username firstName lastName");
+      .populate("product", "name price image")
+      .populate("seller", "username firstName lastName");
 
     res.status(201).json({ sale: populatedSale });
   } catch (error) {
@@ -99,8 +99,8 @@ router.get("/", authenticate, async (req, res) => {
     }
 
     const sales = await Sale.find(query)
-      .populate("sellerId", "username firstName lastName")
-      .populate("productId", "name price image")
+      .populate("seller", "username firstName lastName")
+      .populate("product", "name price image")
       .sort({ timestamp: -1 });
 
     res.json({ sales });
@@ -113,8 +113,8 @@ router.get("/", authenticate, async (req, res) => {
 router.get("/:id", authenticate, async (req, res) => {
   try {
     const sale = await Sale.findById(req.params.id)
-      .populate("sellerId", "username firstName lastName")
-      .populate("productId", "name price image");
+      .populate("seller", "username firstName lastName")
+      .populate("product", "name price image");
 
     if (!sale) {
       return res.status(404).json({ error: "Sale not found" });
@@ -123,7 +123,7 @@ router.get("/:id", authenticate, async (req, res) => {
     // Sellers can only see their own sales
     if (
       req.user.role === "seller" &&
-      sale.sellerId._id.toString() !== req.user._id.toString()
+      sale.seller._id.toString() !== req.user._id.toString()
     ) {
       return res.status(403).json({ error: "Access denied" });
     }

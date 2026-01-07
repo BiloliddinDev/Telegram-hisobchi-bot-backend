@@ -17,8 +17,8 @@ router.get("/products", async (req, res) => {
       sellerId: req.user._id,
       isActive: true,
     })
-      .populate("productId")
-      .select("productId assignAt");
+      .populate("product")
+      .select("product assignAt");
     res.json({ products: products });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -92,7 +92,7 @@ router.get("/sales", async (req, res) => {
     }
 
     const sales = await Sale.find(query)
-      .populate("productId", "name price image")
+      .populate("product", "name price image")
       .sort({ timestamp: -1 });
 
     res.json({ sales });
@@ -123,7 +123,7 @@ router.get("/reports", async (req, res) => {
       sellerId: req.user._id,
       timestamp: { $gte: startDate, $lte: endDate },
     })
-      .populate("productId", "name price")
+      .populate("product", "name price")
       .sort({ timestamp: -1 });
 
     const totalSales = sales.length;

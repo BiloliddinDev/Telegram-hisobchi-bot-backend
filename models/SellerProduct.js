@@ -1,12 +1,12 @@
 const mongoose = require("mongoose");
 
 const SellerProductSchema = new mongoose.Schema({
-  sellerId: {
+  seller: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "Seller",
     required: true,
   },
-  productId: {
+  product: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "Product",
     required: true,
@@ -26,16 +26,16 @@ const SellerProductSchema = new mongoose.Schema({
   },
 });
 
-SellerProductSchema.index({ sellerId: 1, productId: 1 }, { unique: true });
-SellerProductSchema.index({ sellerId: 1 });
-SellerProductSchema.index({ productId: 1 });
+SellerProductSchema.index({ seller: 1, product: 1 }, { unique: true });
+SellerProductSchema.index({ seller: 1 });
+SellerProductSchema.index({ product: 1 });
 
 // Static method to find stock by seller and product
 SellerProductSchema.statics.findBySellerAndProduct = function (
   sellerId,
   productId,
 ) {
-  return this.findOne({ sellerId: sellerId, productId: productId });
+  return this.findOne({ seller: sellerId, product: productId });
 };
 
 SellerProductSchema.methods.assign = async function (toSave = true, session) {

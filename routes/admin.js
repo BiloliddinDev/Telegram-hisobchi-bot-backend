@@ -28,6 +28,19 @@ router.get("/sellers", async (req, res) => {
   }
 });
 
+// Get all sellers
+router.get("/sellers/:id", async (req, res) => {
+  try {
+    const seller = await User.findById({ role: "seller", _id: req.params.id });
+    if (!seller) {
+      return res.status(404).json({ error: "Seller not found" });
+    }
+    res.json({ seller });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Create new seller
 router.post("/sellers", validateSeller, async (req, res) => {
   try {
@@ -90,6 +103,155 @@ router.delete("/sellers/:id", async (req, res) => {
     res.json({ message: "Seller inactivated successfully" });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+// Get all seller stocks
+router.get("/seller-stocks", async (req, res) => {
+  try {
+    const sellerStocks = await SellerStock.find()
+      .populate("seller", "username firstName lastName telegramId")
+      .populate("product", "name sku price costPrice warehouseQuantity")
+      .sort({ updatedAt: -1 });
+
+    res.json({ sellerStocks });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get all products for specific seller
+router.get("/sellers/:sellerId/products", async (req, res) => {
+  try {
+    const { sellerId } = req.params;
+
+    const sellerProducts = await SellerProduct.find({
+      seller: sellerId,
+    }).populate("product");
+
+    if (!sellerProducts || sellerProducts.length === 0) {
+      return res.json({
+        products: [],
+        message: "No products found for this seller",
+      });
+    }
+
+    const products = sellerProducts.map(
+      (sellerProduct) => sellerProduct.product,
+    );
+
+    res.json({ products });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get stocks for a specific seller
+router.get("/sellers/:sellerId/stocks", async (req, res) => {
+  try {
+    const { sellerId } = req.params;
+
+    const sellerStocks = await SellerStock.findBySeller(sellerId);
+
+    if (!sellerStocks || sellerStocks.length === 0) {
+      return res.json({
+        sellerStocks: [],
+        message: "No stocks found for this seller",
+      });
+    }
+
+    res.json({ sellerStocks });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get stocks for a specific product
+router.get("/products/:productId/stocks", async (req, res) => {
+  try {
+    const { productId } = req.params;
+
+    const productStocks = await SellerStock.findByProduct(productId);
+
+    if (!productStocks || productStocks.length === 0) {
+      return res.json({
+        productStocks: [],
+        message: "No stocks found for this product",
+      });
+    }
+
+    res.json({ productStocks });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update seller stock quantity directly
+router.patch("/seller-stocks/:stockId", async (req, res) => {
+  const session = await mongoose.startSession();
+  try {
+    const { stockId } = req.params;
+    const { quantity } = req.body;
+
+    if (typeof quantity !== "number" || quantity < 0) {
+      throw new Error("Valid quantity is required (must be >= 0)");
+    }
+
+    await session.withTransaction(async () => {
+      const sellerStock = await SellerStock.findById(stockId)
+        .populate("seller", "username firstName lastName")
+        .populate("product", "name sku")
+        .session(session);
+
+      if (!sellerStock) {
+        throw new Error("Seller stock not found");
+      }
+
+      if (sellerStock.quantity === 0) {
+        const sellerProduct = await SellerProduct.findBySellerAndProduct(
+          sellerStock.seller._id,
+          sellerStock.product._id,
+        ).session(session);
+
+        if (!sellerProduct || !sellerProduct.isActive) {
+          throw new Error("SellerProduct not active or not found");
+        }
+      }
+
+      const oldQuantity = sellerStock.quantity;
+      const difference = quantity - oldQuantity;
+
+      await transferStock(
+        sellerStock.seller._id,
+        sellerStock.product._id,
+        difference,
+        session,
+      );
+
+      // 🔧 CRITICAL: Create Transfer record for audit trail
+      if (difference !== 0) {
+        await Transfer.create(
+          [
+            {
+              sellerId: sellerStock.seller._id,
+              productId: sellerStock.product._id,
+              quantity: Math.abs(difference),
+              type: difference > 0 ? "transfer" : "return",
+              status: "completed",
+            },
+          ],
+          { session },
+        );
+      }
+    });
+
+    res.json({
+      message: "Stock quantity updated successfully",
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  } finally {
+    await session.endSession();
   }
 });
 
@@ -158,8 +320,8 @@ router.delete(
           await Transfer.create(
             [
               {
-                sellerId: sellerId,
-                productId: productId,
+                seller: sellerId,
+                product: productId,
                 quantity: quantity,
                 type: "return",
                 status: "completed",
@@ -213,8 +375,8 @@ router.get("/reports", async (req, res) => {
         $lte: endDate,
       },
     })
-      .populate("sellerId", "username firstName lastName")
-      .populate("productId", "name price")
+      .populate("seller", "username firstName lastName")
+      .populate("product", "name price")
       .sort({ timestamp: -1 });
 
     const reportDTO = ReportDTO.create(sales, startDate, endDate);
@@ -222,129 +384,6 @@ router.get("/reports", async (req, res) => {
     res.json(reportDTO.toJSON());
   } catch (error) {
     res.status(500).json({ error: error.message });
-  }
-});
-
-// Get all seller stocks
-router.get("/seller-stocks", async (req, res) => {
-  try {
-    const sellerStocks = await SellerStock.find()
-      .populate("seller", "username firstName lastName telegramId")
-      .populate("product", "name sku price costPrice warehouseQuantity")
-      .sort({ updatedAt: -1 });
-
-    res.json({ sellerStocks });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Get stocks for a specific seller
-router.get("/sellers/:sellerId/stocks", async (req, res) => {
-  try {
-    const { sellerId } = req.params;
-
-    const sellerStocks = await SellerStock.findBySeller(sellerId);
-
-    if (!sellerStocks || sellerStocks.length === 0) {
-      return res.json({
-        sellerStocks: [],
-        message: "No stocks found for this seller",
-      });
-    }
-
-    res.json({ sellerStocks });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Get stocks for a specific product
-router.get("/products/:productId/stocks", async (req, res) => {
-  try {
-    const { productId } = req.params;
-
-    const productStocks = await SellerStock.findByProduct(productId);
-
-    if (!productStocks || productStocks.length === 0) {
-      return res.json({
-        productStocks: [],
-        message: "No stocks found for this product",
-      });
-    }
-
-    res.json({ productStocks });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Update seller stock quantity directly
-router.patch("/seller-stocks/:stockId", async (req, res) => {
-  const session = await mongoose.startSession();
-  try {
-    const { stockId } = req.params;
-    const { quantity } = req.body;
-
-    if (typeof quantity !== "number" || quantity < 0) {
-      throw new Error("Valid quantity is required (must be >= 0)");
-    }
-
-    await session.withTransaction(async () => {
-      const sellerStock = await SellerStock.findById(stockId)
-        .populate("seller", "username firstName lastName")
-        .populate("product", "name sku")
-        .session(session);
-
-      if (!sellerStock) {
-        throw new Error("Seller stock not found");
-      }
-
-      if (sellerStock.quantity == 0) {
-        const sellerProduct = await SellerProduct.findBySellerAndProduct(
-          sellerStock.seller._id,
-          sellerStock.product._id,
-        ).session(session);
-
-        if (!sellerProduct || !sellerProduct.isActive) {
-          throw new Error("SellerProduct not active or not found");
-        }
-      }
-
-      const oldQuantity = sellerStock.quantity;
-      const difference = quantity - oldQuantity;
-
-      await transferStock(
-        sellerStock.seller._id,
-        sellerStock.product._id,
-        difference,
-        session,
-      );
-
-      // 🔧 CRITICAL: Create Transfer record for audit trail
-      if (difference !== 0) {
-        await Transfer.create(
-          [
-            {
-              sellerId: sellerStock.seller._id,
-              productId: sellerStock.product._id,
-              quantity: Math.abs(difference),
-              type: difference > 0 ? "transfer" : "return",
-              status: "completed",
-            },
-          ],
-          { session },
-        );
-      }
-    });
-
-    res.json({
-      message: "Stock quantity updated successfully",
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  } finally {
-    await session.endSession();
   }
 });
 
