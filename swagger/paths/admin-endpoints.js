@@ -526,7 +526,7 @@
  *         description: Seller ID
  *     responses:
  *       200:
- *         description: Seller details retrieved successfully
+ *         description: Product details retrieved successfully
  *         content:
  *           application/json:
  *             schema:
@@ -540,6 +540,41 @@
  *                   type: string
  *                   description: Message if no products found
  *                   example: "No products found for this seller"
+ */
+
+/**
+ * @swagger
+ * /api/admin/sellers/{sellerId}/sales:
+ *   get:
+ *     tags:
+ *        - Admin - Sales Management
+ *     summary: Get sales for specific seller
+ *     description: Returns all sales for a specific seller
+ *     security:
+ *       - TelegramAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: sellerId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Seller ID
+ *     responses:
+ *       200:
+ *         description: Seller details retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 sa:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/Sale'
+ *                 message:
+ *                   type: string
+ *                   description: Message if no sales found
+ *                   example: "No sales found for this seller"
  */
 
 /**
