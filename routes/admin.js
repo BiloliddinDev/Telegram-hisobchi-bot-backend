@@ -79,15 +79,26 @@ router.put("/sellers/:id", async (req, res) => {
   try {
     const { username, firstName, lastName, phoneNumber, avatarUrl, isActive } =
       req.body;
+
+    // First, find the seller to check their status
+    const existingSeller = await User.findById(req.params.id);
+
+    if (!existingSeller || existingSeller.role !== "seller") {
+      return res.status(404).json({ error: "Seller not found" });
+    }
+
+    // Prevent updates if seller is inactive or deleted
+    if (!existingSeller.isActive || existingSeller.isDeleted) {
+      return res
+        .status(403)
+        .json({ error: "Cannot update inactive or deleted seller" });
+    }
+
     const seller = await User.findByIdAndUpdate(
       req.params.id,
       { username, firstName, lastName, phoneNumber, avatarUrl, isActive },
       { new: true },
     ).select("-__v");
-
-    if (!seller || seller.role !== "seller") {
-      return res.status(404).json({ error: "Seller not found" });
-    }
 
     res.json({ seller });
   } catch (error) {

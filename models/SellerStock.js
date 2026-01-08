@@ -83,38 +83,46 @@ SellerStockSchema.statics.increaseQuantity = function ({
   if (amount <= 0) {
     throw new Error("Amount must be greater than zero");
   }
+  const filtersAndValidators = {};
+  const updateOptions = {
+    new: true,
+    session,
+  };
 
-  filtersAndValidators = {};
   if (stockId) {
     filtersAndValidators._id = stockId;
+    updateOptions.upsert = false;
   } else {
     filtersAndValidators.seller = sellerId;
     filtersAndValidators.product = productId;
+    updateOptions.upsert = true;
+    updateOptions.setDefaultsOnInsert = true;
   }
-  console.log(filtersAndValidators);
   return this.findOneAndUpdate(
     filtersAndValidators,
     {
       $inc: { quantity: amount },
+      $set: { lastTransferDate: new Date() },
+      $setOnInsert: {
+        seller: sellerId,
+        product: productId,
+      },
     },
-    {
-      new: true,
-      session,
-    },
+    updateOptions,
   );
 };
 
 SellerStockSchema.statics.decreaseQuantity = function ({
   sellerId,
   productId,
-  stockId = null,
+  stockId,
   amount,
   session,
 }) {
   if (amount <= 0) {
     throw new Error("Amount must be greater than zero");
   }
-  filtersAndValidators = {};
+  const filtersAndValidators = {};
   if (stockId) {
     filtersAndValidators._id = stockId;
   } else {
@@ -127,6 +135,7 @@ SellerStockSchema.statics.decreaseQuantity = function ({
     filtersAndValidators,
     {
       $inc: { quantity: -amount },
+      $set: { lastTransferDate: new Date() },
     },
     { new: true, session },
   );
