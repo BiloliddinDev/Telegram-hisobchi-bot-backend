@@ -4,7 +4,9 @@ const User = require("../models/User");
 const Product = require("../models/Product");
 const Sale = require("../models/Sale");
 const SellerStock = require("../models/SellerStock");
+const SellerProduct = require("../models/SellerProduct");
 const { authenticate, isSeller } = require("../middleware/auth");
+const { getActiveAssignedStocksForSeller } = require("./utils");
 
 // All sellerId routes require authentication and sellerId role
 router.use(authenticate);
@@ -25,24 +27,24 @@ router.get("/products", async (req, res) => {
   }
 });
 
-// Get seller's stock inventory
+// Get seller's stock inventory (ACTIVE ASSIGNMENTS ONLY)
 router.get("/stocks", async (req, res) => {
   try {
-    const sellerStocks = await SellerStock.findBySeller(req.user._id);
+    const assignedStocks = await getActiveAssignedStocksForSeller(req.user._id);
 
     // Calculate total stock value
-    const totalStockValue = sellerStocks.reduce((total, stock) => {
-      return total + stock.quantity * (stock.product?.costPrice || 0);
+    const totalStockValue = assignedStocks.reduce((total, row) => {
+      return total + (row.stock?.quantity || 0) * (row.product?.costPrice || 0);
     }, 0);
 
-    const totalProducts = sellerStocks.length;
-    const totalQuantity = sellerStocks.reduce(
-      (total, stock) => total + stock.quantity,
+    const totalProducts = assignedStocks.length;
+    const totalQuantity = assignedStocks.reduce(
+      (total, row) => total + (row.stock?.quantity || 0),
       0,
     );
 
     res.json({
-      stocks: sellerStocks,
+      stocks: assignedStocks,
       summary: {
         totalProducts,
         totalQuantity,

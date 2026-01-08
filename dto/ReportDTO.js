@@ -1,34 +1,94 @@
 class ReportDTO {
-  constructor(sales, startDate, endDate) {
+  // product:
+  //    totalProducts: total products in all warehouses
+  //    totalProductQuantity: total quantity of all products in all warehouses
+  //    totalProductCostPrice: total cost price of all products in all warehouses
+  // sellerStocks:
+  //    totalSellerStocks: total stocks of all sellers in all warehouses
+  //    totalSellerStockQuantity: total quantity of all stocks of all sellers in all warehouses
+  //    totalSellerStockCostPrice: total cost price of all stocks of all sellers in all warehouses
+  // sales:
+  //    totalSales: total sales in all warehouses
+  //    totalRevenue: total revenue in all warehouses
+  //    totalSalesQuantity: total quantity of all sales in all warehouses
+  constructor(sales, startDate, endDate, products = [], sellerStocks = []) {
     this.period = {
       startDate,
       endDate,
     };
-    this.summary = this._calculateSummary(sales);
-    this.salesBySeller = this._groupSalesBySeller(sales);
-    this.salesByProduct = this._groupSalesByProduct(sales);
-    this.topPerformers = this._getTopPerformers(sales);
-    this.dailySales = this._getDailySales(sales, startDate, endDate);
+    this.summary = this._calculateSummary(sales, products, sellerStocks);
+    // this.salesBySeller = this._groupSalesBySeller(sales);
+    // this.salesByProduct = this._groupSalesByProduct(sales);
+    // this.topPerformers = this._getTopPerformers(sales);
+    // this.dailySales = this._getDailySales(sales, startDate, endDate);
   }
 
-  _calculateSummary(sales, sellers, products) {
+  _calculateSummary(sales, products, sellerStocks) {
+    // Calculate product statistics
+    const totalProducts = products.length;
+    const totalProductQuantity = products.reduce(
+      (sum, product) => sum + (product.warehouseQuantity || 0),
+      0,
+    );
+    const totalProductCostPrice = products.reduce(
+      (sum, product) =>
+        sum + (product.warehouseQuantity || 0) * (product.costPrice || 0),
+      0,
+    );
+
+    // Calculate seller stock statistics
+    const totalSellerStocks = sellerStocks.length;
+    const totalSellerStockQuantity = sellerStocks.reduce(
+      (sum, stock) => sum + (stock.stock?.quantity || 0),
+      0,
+    );
+    const totalSellerStockCostPrice = sellerStocks.reduce(
+      (sum, stock) =>
+        sum + (stock.stock?.quantity || 0) * (stock.product?.costPrice || 0),
+      0,
+    );
+
+    // Calculate sales statistics
+    const totalSales = sales.length;
+    const totalRevenue = sales.reduce(
+      (sum, sale) => sum + (sale.totalAmount || 0),
+      0,
+    );
+    const totalSalesQuantity = sales.reduce(
+      (sum, sale) => sum + (sale.quantity || 0),
+      0,
+    );
+
+    // Get unique sellers and products from sales
+    const uniqueSellers = new Set(
+      sales.map((sale) => sale.seller?._id?.toString()).filter(Boolean),
+    );
+    const uniqueProductsInSales = new Set(
+      sales.map((sale) => sale.product?._id?.toString()).filter(Boolean),
+    );
+
     return {
-      totalSales: sales.length,
-      totalRevenue: sales.reduce(
-        (sum, sale) => sum + (sale.totalAmount || 0),
-        0,
-      ),
-      totalSalesQuantity: sales.reduce(
-        (sum, sale) => sum + (sale.quantity || 0),
-        0,
-      ),
-      totalSellers: 0,
-      totalProducts: 0,
-      averageSaleAmount:
-        sales.length > 0
-          ? sales.reduce((sum, sale) => sum + (sale.totalAmount || 0), 0) /
-            sales.length
-          : 0,
+      // Product statistics
+      products: {
+        totalProducts,
+        totalProductQuantity,
+        totalProductCostPrice,
+      },
+      // Seller stock statistics
+      sellerStocks: {
+        totalSellerStocks,
+        totalSellerStockQuantity,
+        totalSellerStockCostPrice,
+      },
+      // Sales statistics
+      sales: {
+        totalSales,
+        totalRevenue,
+        totalSalesQuantity,
+        totalSellers: uniqueSellers.size,
+        totalProductsSold: uniqueProductsInSales.size,
+        averageSaleAmount: totalSales > 0 ? totalRevenue / totalSales : 0,
+      },
     };
   }
 
@@ -192,9 +252,18 @@ class ReportDTO {
     );
   }
 
-  // Static method to create DTO from sales data
-  static create(sales, startDate, endDate) {
-    return new ReportDTO(sales, startDate, endDate);
+  // Static method to create DTO from sales data with products and seller stocks
+  static async create(sales, startDate, endDate) {
+    const Product = require("../models/Product");
+    const { getAssignedStocks } = require("../routes/utils");
+
+    // Fetch all products
+    const products = await Product.find({});
+
+    // Fetch all seller stocks (with active assignments)
+    const sellerStocks = await getAssignedStocks(true);
+
+    return new ReportDTO(sales, startDate, endDate, products, sellerStocks);
   }
 
   // Method to get a simplified version for API response
@@ -202,10 +271,10 @@ class ReportDTO {
     return {
       period: this.period,
       summary: this.summary,
-      salesBySeller: this.salesBySeller,
-      salesByProduct: this.salesByProduct,
-      topPerformers: this.topPerformers,
-      dailySales: this.dailySales,
+      // salesBySeller: this.salesBySeller,
+      // salesByProduct: this.salesB?yProduct,
+      // topPerformers: this.topPerformers,
+      // dailySales: this.dailySales,
     };
   }
 }

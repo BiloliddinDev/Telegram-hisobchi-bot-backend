@@ -98,7 +98,27 @@
  *     tags:
  *       - Admin - User Management
  *     summary: Create new seller
- *     description: Creates a new seller account in the system
+ *     description: |
+ *       Creates a new seller account in the system.
+ *
+ *       **Behavior:**
+ *       - Creates user with "seller" role
+ *       - Phone number must be unique (duplicate check)
+ *       - Telegram ID is optional but recommended
+ *       - User is created as active by default
+ *       - Username is optional
+ *
+ *       **Use Cases:**
+ *       - Onboard new sellers to the system
+ *       - Register sales representatives
+ *       - Add team members for product distribution
+ *       - Create user accounts for inventory management
+ *
+ *       **Validation:**
+ *       - Phone number must be unique
+ *       - First name and last name are required
+ *       - Phone number format should follow standards
+ *       - Telegram ID should be valid if provided
  *     security:
  *       - TelegramAuth: []
  *     requestBody:
@@ -114,24 +134,42 @@
  *             properties:
  *               telegramId:
  *                 type: string
- *                 description: Telegram user ID (optional)
+ *                 description: Telegram user ID (optional, recommended for bot integration)
  *                 example: "1234567890"
  *               username:
  *                 type: string
- *                 description: Username
+ *                 description: Username (optional)
  *                 example: "john_doe"
  *               firstName:
  *                 type: string
- *                 description: First name
+ *                 description: First name (required)
  *                 example: "John"
+ *                 minLength: 1
  *               lastName:
  *                 type: string
- *                 description: Last name
+ *                 description: Last name (required)
  *                 example: "Doe"
+ *                 minLength: 1
  *               phoneNumber:
  *                 type: string
- *                 description: Phone number (must be unique)
+ *                 description: Phone number (required, must be unique)
  *                 example: "+998901234567"
+ *                 pattern: "^\\+998[0-9]{9}$"
+ *           examples:
+ *             basicSeller:
+ *               summary: Create seller with required fields only
+ *               value:
+ *                 firstName: "John"
+ *                 lastName: "Doe"
+ *                 phoneNumber: "+998901234567"
+ *             fullSeller:
+ *               summary: Create seller with all fields
+ *               value:
+ *                 telegramId: "1234567890"
+ *                 username: "john_seller"
+ *                 firstName: "John"
+ *                 lastName: "Doe"
+ *                 phoneNumber: "+998901234567"
  *     responses:
  *       201:
  *         description: Seller created successfully
@@ -142,14 +180,83 @@
  *               properties:
  *                 seller:
  *                   $ref: '#/components/schemas/User'
+ *             examples:
+ *               success:
+ *                 summary: Seller successfully created
+ *                 value:
+ *                   seller:
+ *                     _id: "507f1f77bcf86cd799439015"
+ *                     telegramId: "1234567890"
+ *                     username: "john_seller"
+ *                     firstName: "John"
+ *                     lastName: "Doe"
+ *                     phoneNumber: "+998901234567"
+ *                     role: "seller"
+ *                     isActive: true
  *       400:
- *         description: Phone number already exists
+ *         description: Bad request - Phone number already exists or validation error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             examples:
+ *               phoneExists:
+ *                 summary: Phone number already registered
+ *                 value:
+ *                   error: "Ushbu telefon raqamli foydalanuvchi allaqachon mavjud"
+ *               missingFields:
+ *                 summary: Required fields missing
+ *                 value:
+ *                   error: "firstName, lastName, and phoneNumber are required"
+ *               invalidPhone:
+ *                 summary: Invalid phone number format
+ *                 value:
+ *                   error: "Invalid phone number format"
  *       401:
- *         description: Authentication required
+ *         description: Authentication required - No valid authentication token provided
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             examples:
+ *               noAuth:
+ *                 summary: Missing authentication
+ *                 value:
+ *                   error: "Authentication required"
+ *               invalidToken:
+ *                 summary: Invalid token
+ *                 value:
+ *                   error: "Invalid authentication token"
  *       403:
- *         description: Admin access required
+ *         description: Admin access required - User is not an administrator
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             examples:
+ *               notAdmin:
+ *                 summary: Insufficient permissions
+ *                 value:
+ *                   error: "Admin access required"
+ *               sellerAttempt:
+ *                 summary: Seller trying to create another seller
+ *                 value:
+ *                   error: "Only administrators can create seller accounts"
  *       500:
- *         description: Server error
+ *         description: Server error - Internal server error occurred
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             examples:
+ *               serverError:
+ *                 summary: Database error
+ *                 value:
+ *                   error: "Internal server error"
+ *               dbError:
+ *                 summary: Database connection failed
+ *                 value:
+ *                   error: "Failed to create seller account"
  */
 
 /**
@@ -437,11 +544,28 @@
  *                   example: 10
  *       404:
  *         description: SellerStock not found
+ */
+
+/**
+ * @swagger
+ * /api/admin/seller-stocks/{stockId}:
  *   delete:
  *     tags:
  *       - Admin - Stock Management
- *     summary: Delete seller stock
- *     description: Removes seller stock record and returns all quantity to warehouse with transfer record creation
+ *     summary: Delete seller stock and return to warehouse
+ *     description: |
+ *       Returns all seller stock to warehouse and optionally unassigns the product from the seller.
+ *
+ *       **Behavior:**
+ *       - Returns all current stock quantity back to warehouse
+ *       - Creates a transfer record for audit trail
+ *       - If stock quantity is 0, still proceeds (idempotent)
+ *       - Optionally unassigns product if `unassign=true` query parameter is provided
+ *
+ *       **Use Cases:**
+ *       - `/seller-stocks/{id}` - Returns stock but keeps product assigned
+ *
+ *       - `/seller-stocks/{id}?unassign=true` - Returns stock AND unassigns product
  *     security:
  *       - TelegramAuth: []
  *     parameters:
@@ -451,25 +575,75 @@
  *         schema:
  *           type: string
  *         description: SellerStock ID
+ *         example: "507f1f77bcf86cd799439011"
+ *       - in: query
+ *         name: unassign
+ *         schema:
+ *           type: boolean
+ *         description: Whether to also unassign the product from seller
+ *         example: true
  *     responses:
  *       200:
- *         description: Seller stock removed successfully
+ *         description: Seller stock returned to warehouse successfully
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
  *                 message:
  *                   type: string
- *                   example: "Seller stock removed successfully"
- *                 returnedToWarehouse:
- *                   type: number
- *                   description: Quantity returned to warehouse
- *                   example: 20
- *                 sellerStock:
- *                   $ref: '#/components/schemas/SellerStock'
+ *                   example: "Stock returned to warehouse successfully"
+ *             examples:
+ *               withoutUnassign:
+ *                 summary: Stock returned, product still assigned
+ *                 value:
+ *                   success: true
+ *                   message: "Stock returned to warehouse successfully"
+ *               withUnassign:
+ *                 summary: Stock returned and product unassigned
+ *                 value:
+ *                   success: true
+ *                   message: "Stock returned to warehouse and product unassigned successfully"
+ *       400:
+ *         description: Bad request - No stock to return or validation error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             examples:
+ *               noStock:
+ *                 summary: No stock to return
+ *                 value:
+ *                   error: "No stock to return"
+ *       401:
+ *         description: Authentication required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       403:
+ *         description: Admin access required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  *       404:
  *         description: SellerStock not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: "SellerStock not found"
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 
 /**
@@ -622,7 +796,26 @@
  *     tags:
  *       - Admin - User Management
  *     summary: Delete seller (Admin only)
- *     description: Deletes a seller from the system
+ *     description: |
+ *       Soft deletes a seller from the system (marks as inactive).
+ *
+ *       **Behavior:**
+ *       - Does NOT permanently delete the seller
+ *       - Marks seller as inactive (isActive = false)
+ *       - Preserves all seller data and history
+ *       - Seller can be reactivated later if needed
+ *
+ *       **Use Cases:**
+ *       - Temporarily deactivate seller accounts
+ *       - Remove sellers from active duty while preserving history
+ *       - Offboard sellers without losing transaction records
+ *       - Suspend seller accounts for investigation
+ *
+ *       **Important:**
+ *       - This is a soft delete (data preserved)
+ *       - Sales history remains intact
+ *       - Stock assignments may need separate handling
+ *       - Can be reversed by updating isActive to true
  *     security:
  *       - TelegramAuth: []
  *     parameters:
@@ -631,10 +824,11 @@
  *         required: true
  *         schema:
  *           type: string
- *         description: Seller ID
+ *         description: Seller ID to deactivate
+ *         example: "507f1f77bcf86cd799439015"
  *     responses:
  *       200:
- *         description: Seller deleted successfully
+ *         description: Seller inactivated successfully (soft delete)
  *         content:
  *           application/json:
  *             schema:
@@ -642,13 +836,74 @@
  *               properties:
  *                 message:
  *                   type: string
- *                   example: "Seller deleted successfully"
+ *                   example: "Seller inactivated successfully"
+ *             examples:
+ *               success:
+ *                 summary: Seller soft deleted
+ *                 value:
+ *                   message: "Seller inactivated successfully"
  *       401:
- *         description: Authentication required
+ *         description: Authentication required - No valid authentication token provided
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             examples:
+ *               noAuth:
+ *                 summary: Missing authentication
+ *                 value:
+ *                   error: "Authentication required"
+ *               invalidToken:
+ *                 summary: Invalid token
+ *                 value:
+ *                   error: "Invalid authentication token"
  *       403:
- *         description: Admin access required
+ *         description: Admin access required - User is not an administrator
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             examples:
+ *               notAdmin:
+ *                 summary: Insufficient permissions
+ *                 value:
+ *                   error: "Admin access required"
+ *               sellerAttempt:
+ *                 summary: Seller trying to delete another seller
+ *                 value:
+ *                   error: "Only administrators can delete seller accounts"
  *       404:
- *         description: Seller not found
+ *         description: Seller not found - The specified seller does not exist
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             examples:
+ *               notFound:
+ *                 summary: Seller does not exist
+ *                 value:
+ *                   error: "Seller not found"
+ *               notSeller:
+ *                 summary: User is not a seller
+ *                 value:
+ *                   error: "User is not a seller"
+ *               invalidId:
+ *                 summary: Invalid seller ID format
+ *                 value:
+ *                   error: "Invalid seller ID"
  *       500:
- *         description: Server error
+ *         description: Server error - Internal server error occurred
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             examples:
+ *               serverError:
+ *                 summary: Database error
+ *                 value:
+ *                   error: "Internal server error"
+ *               updateFailed:
+ *                 summary: Failed to update seller status
+ *                 value:
+ *                   error: "Failed to inactivate seller"
  */

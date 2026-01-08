@@ -64,7 +64,7 @@ router.post("/", validateSale, async (req, res) => {
       );
 
       const isDecreased = await SellerStock.decreaseQuantity({
-        sellerStock: sellerStock._id,
+        stockId: sellerStock._id,
         amount: Math.abs(quantity),
         session: session,
       });

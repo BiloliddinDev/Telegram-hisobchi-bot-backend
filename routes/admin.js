@@ -10,7 +10,13 @@ const Transfer = require("../models/Transfer");
 const { authenticate, isAdmin } = require("../middleware/auth");
 const { validateSeller } = require("../middleware/validation");
 const ReportDTO = require("../dto/ReportDTO");
-const { createSellerProduct, transferStock } = require("./utils");
+const {
+  createSellerProduct,
+  transferStock,
+  getAssignedStocks,
+  getActiveAssignedStocksForSeller,
+} = require("./utils");
+const { get } = require("./products");
 
 // All admin routes require authentication and admin role
 router.use(authenticate);
@@ -109,11 +115,7 @@ router.delete("/sellers/:id", async (req, res) => {
 // Get all seller stocks
 router.get("/seller-stocks", async (req, res) => {
   try {
-    const sellerStocks = await SellerStock.find()
-      .populate("seller", "username firstName lastName telegramId")
-      .populate("product", "name sku price costPrice warehouseQuantity")
-      .sort({ updatedAt: -1 });
-
+    const sellerStocks = await getAssignedStocks();
     res.json({ sellerStocks });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -127,6 +129,7 @@ router.get("/sellers/:sellerId/products", async (req, res) => {
 
     const sellerProducts = await SellerProduct.find({
       seller: sellerId,
+      isActive: true,
     }).populate("product");
 
     if (!sellerProducts || sellerProducts.length === 0) {
@@ -150,16 +153,11 @@ router.get("/sellers/:sellerId/products", async (req, res) => {
 router.get("/sellers/:sellerId/stocks", async (req, res) => {
   try {
     const { sellerId } = req.params;
-
-    const sellerStocks = await SellerStock.findBySeller(sellerId);
-
-    if (!sellerStocks || sellerStocks.length === 0) {
-      return res.json({
-        sellerStocks: [],
-        message: "No stocks found for this seller",
-      });
+    const seller = await User.findById(sellerId);
+    if (!seller) {
+      return res.status(404).json({ error: "Seller not found" });
     }
-
+    const sellerStocks = await getActiveAssignedStocksForSeller(seller._id);
     res.json({ sellerStocks });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -218,8 +216,8 @@ router.patch("/seller-stocks/:stockId", async (req, res) => {
 
     await session.withTransaction(async () => {
       const sellerStock = await SellerStock.findById(stockId)
-        .populate("seller", "username firstName lastName")
-        .populate("product", "name sku")
+        .populate("seller")
+        .populate("product")
         .session(session);
 
       if (!sellerStock) {
@@ -239,13 +237,20 @@ router.patch("/seller-stocks/:stockId", async (req, res) => {
 
       const oldQuantity = sellerStock.quantity;
       const difference = quantity - oldQuantity;
+      const maxAllowed = oldQuantity + sellerStock.product.warehouseQuantity;
 
-      await transferStock(
-        sellerStock.seller._id,
-        sellerStock.product._id,
-        difference,
-        session,
-      );
+      if (maxAllowed < quantity) {
+        throw new Error(
+          `Cannot set quantity to ${quantity}. Max allowed is ${maxAllowed}`,
+        );
+      }
+
+      await transferStock({
+        sellerId: sellerStock.seller._id,
+        productId: sellerStock.product._id,
+        amount: difference,
+        session: session,
+      });
 
       // 🔧 CRITICAL: Create Transfer record for audit trail
       if (difference !== 0) {
@@ -334,7 +339,12 @@ router.delete(
             );
           }
 
-          await transferStock(sellerId, productId, -quantity, session);
+          await transferStock({
+            sellerId: sellerId,
+            productId: productId,
+            amount: -quantity,
+            session: session,
+          });
 
           await Transfer.create(
             [
@@ -367,6 +377,96 @@ router.delete(
   },
 );
 
+// Delete seller stock - Return all stock to warehouse and remove stock record
+router.delete("/seller-stocks/:stockId", async (req, res) => {
+  const session = await mongoose.startSession();
+  try {
+    const { stockId } = req.params;
+    const { unassign } = req.query; // ?unassign=true to also unassign the product
+
+    let returnedQuantity = 0;
+    let sellerInfo = null;
+    let productInfo = null;
+
+    await session.withTransaction(async () => {
+      // Find the seller stock with populated references
+      const existingSellerStock = await SellerStock.findById(stockId)
+        .populate("seller", "username firstName lastName")
+        .populate("product", "name sku")
+        .session(session);
+
+      if (!existingSellerStock) {
+        throw new Error("SellerStock not found");
+      }
+
+      returnedQuantity = existingSellerStock.quantity;
+      sellerInfo = existingSellerStock.seller;
+      productInfo = existingSellerStock.product;
+
+      // Only process if there's stock to return
+      if (returnedQuantity > 0) {
+        // Transfer stock back to warehouse (negative amount = return)
+        await transferStock({
+          sellerId: sellerInfo._id,
+          productId: productInfo._id,
+          stockId: stockId,
+          amount: -returnedQuantity,
+          session: session,
+        });
+
+        // Create transfer record for audit trail
+        await Transfer.create(
+          [
+            {
+              seller: existingSellerStock.seller._id,
+              product: existingSellerStock.product._id,
+              quantity: returnedQuantity,
+              type: "return",
+              status: "completed",
+            },
+          ],
+          { session },
+        );
+      }
+
+      // Optionally unassign the product from seller
+      if (unassign === "true") {
+        const sellerProduct = await SellerProduct.findBySellerAndProduct(
+          existingSellerStock.seller._id,
+          existingSellerStock.product._id,
+        ).session(session);
+
+        if (sellerProduct && sellerProduct.isActive) {
+          await sellerProduct.unassign(true, session);
+        }
+      }
+    });
+
+    res.json({
+      success: true,
+      message:
+        unassign === "true"
+          ? "Stock returned to warehouse and product unassigned successfully"
+          : "Stock returned to warehouse successfully",
+      returnedQuantity: returnedQuantity,
+      seller: {
+        id: sellerInfo._id,
+        name: `${sellerInfo.firstName} ${sellerInfo.lastName}`,
+        username: sellerInfo.username,
+      },
+      product: {
+        id: productInfo._id,
+        name: productInfo.name,
+        sku: productInfo.sku,
+      },
+    });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  } finally {
+    await session.endSession();
+  }
+});
+
 // Get reports
 router.get("/reports", async (req, res) => {
   try {
@@ -398,7 +498,7 @@ router.get("/reports", async (req, res) => {
       .populate("product", "name price")
       .sort({ timestamp: -1 });
 
-    const reportDTO = ReportDTO.create(sales, startDate, endDate);
+    const reportDTO = await ReportDTO.create(sales, startDate, endDate);
 
     res.json(reportDTO.toJSON());
   } catch (error) {

@@ -76,7 +76,7 @@ SellerStockSchema.statics.findByProduct = function (productId) {
 SellerStockSchema.statics.increaseQuantity = function ({
   sellerId,
   productId,
-  sellerStockId = null,
+  stockId,
   amount,
   session,
 }) {
@@ -85,13 +85,13 @@ SellerStockSchema.statics.increaseQuantity = function ({
   }
 
   filtersAndValidators = {};
-  if (sellerStockId) {
-    filtersAndValidators._id = sellerStockId;
+  if (stockId) {
+    filtersAndValidators._id = stockId;
   } else {
     filtersAndValidators.seller = sellerId;
     filtersAndValidators.product = productId;
   }
-
+  console.log(filtersAndValidators);
   return this.findOneAndUpdate(
     filtersAndValidators,
     {
@@ -107,7 +107,7 @@ SellerStockSchema.statics.increaseQuantity = function ({
 SellerStockSchema.statics.decreaseQuantity = function ({
   sellerId,
   productId,
-  sellerStockId = null,
+  stockId = null,
   amount,
   session,
 }) {
@@ -115,15 +115,14 @@ SellerStockSchema.statics.decreaseQuantity = function ({
     throw new Error("Amount must be greater than zero");
   }
   filtersAndValidators = {};
-  if (sellerStockId) {
-    filtersAndValidators._id = sellerStockId;
+  if (stockId) {
+    filtersAndValidators._id = stockId;
   } else {
     filtersAndValidators.seller = sellerId;
     filtersAndValidators.product = productId;
   }
 
   filtersAndValidators.quantity = { $gte: amount };
-
   return this.findOneAndUpdate(
     filtersAndValidators,
     {

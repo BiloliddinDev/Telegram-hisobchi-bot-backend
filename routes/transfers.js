@@ -106,7 +106,12 @@ router.post("/", async (req, res) => {
         }
 
         // Transfer stock from warehouse to seller using utility function
-        await transferStock(seller._id, product._id, quantity, session);
+        await transferStock({
+          sellerId: seller._id,
+          productId: product._id,
+          amount: quantity,
+          session: session,
+        });
 
         // Create transfer record
         const transfer = (
