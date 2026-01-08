@@ -74,7 +74,7 @@ router.post("/", validateSale, async (req, res) => {
       }
     });
 
-    res.status(201).json({ sale: populatedSale });
+    res.status(201).json({ message: "Sale created successfully" });
   } catch (error) {
     res.status(500).json({ error: error.message });
   } finally {
@@ -88,7 +88,7 @@ router.get("/", async (req, res) => {
     const { startDate, endDate } = req.query;
     let query = {};
 
-    query.sellerId = req.user._id;
+    query.seller = req.user._id;
 
     if (startDate && endDate) {
       query.timestamp = {

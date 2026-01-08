@@ -84,7 +84,7 @@ router.get("/stocks/product/:productId", async (req, res) => {
 router.get("/sales", async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
-    const query = { sellerId: req.user._id };
+    const query = { seller: req.user._id };
 
     if (startDate && endDate) {
       query.timestamp = {
@@ -122,7 +122,7 @@ router.get("/reports", async (req, res) => {
     );
 
     const sales = await Sale.find({
-      sellerId: req.user._id,
+      seller: req.user._id,
       timestamp: { $gte: startDate, $lte: endDate },
     })
       .populate("product", "name price")

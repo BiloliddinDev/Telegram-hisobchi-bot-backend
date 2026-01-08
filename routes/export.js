@@ -14,7 +14,7 @@ const {
  *     summary: Export all database tables to Excel
  *     tags: [Export]
  *     security:
- *       - bearerAuth: []
+ *       - TelegramAuth: []
  *     parameters:
  *       - in: query
  *         name: format
@@ -85,7 +85,7 @@ router.get("/database", authenticate, isAdmin, async (req, res) => {
  *     summary: Get database export statistics
  *     tags: [Export]
  *     security:
- *       - bearerAuth: []
+ *       - TelegramAuth: []
  *     responses:
  *       200:
  *         description: Database statistics
@@ -145,7 +145,7 @@ router.get("/database/info", authenticate, isAdmin, async (req, res) => {
  *     summary: Export custom selection of tables
  *     tags: [Export]
  *     security:
- *       - bearerAuth: []
+ *       - TelegramAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -196,7 +196,7 @@ router.post("/custom", authenticate, isAdmin, async (req, res) => {
  *     summary: Send database export to external destination
  *     tags: [Export]
  *     security:
- *       - bearerAuth: []
+ *       - TelegramAuth: []
  *     requestBody:
  *       required: true
  *       content:

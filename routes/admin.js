@@ -168,7 +168,7 @@ router.get("/sellers/:sellerId/sales", async (req, res) => {
   try {
     const { sellerId } = req.params;
 
-    const sales = await Sale.findBySeller(sellerId);
+    const sales = await Sale.find({ seller: sellerId });
 
     if (!sales || sales.length === 0) {
       return res.json({

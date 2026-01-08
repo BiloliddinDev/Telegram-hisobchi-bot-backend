@@ -12,9 +12,9 @@ router.get("/", authenticate, async (req, res) => {
 
     // Sellers can only see their own reports
     if (req.user.role === "seller") {
-      query.sellerId = req.user._id;
+      query.seller = req.user._id;
     } else if (sellerId) {
-      query.sellerId = sellerId;
+      query.seller = sellerId;
     }
 
     const startDate = new Date(
