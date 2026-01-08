@@ -11,7 +11,7 @@ class ReportDTO {
   //    totalSales: total sales in all warehouses
   //    totalRevenue: total revenue in all warehouses
   //    totalSalesQuantity: total quantity of all sales in all warehouses
-  constructor(sales, startDate, endDate, products = [], sellerStocks = []) {
+  constructor(sales, products = [], sellerStocks = [], startDate, endDate) {
     this.period = {
       startDate,
       endDate,
@@ -86,8 +86,6 @@ class ReportDTO {
         totalRevenue,
         totalSalesQuantity,
         totalSellers: uniqueSellers.size,
-        totalProductsSold: uniqueProductsInSales.size,
-        averageSaleAmount: totalSales > 0 ? totalRevenue / totalSales : 0,
       },
     };
   }
@@ -253,17 +251,8 @@ class ReportDTO {
   }
 
   // Static method to create DTO from sales data with products and seller stocks
-  static async create(sales, startDate, endDate) {
-    const Product = require("../models/Product");
-    const { getAssignedStocks } = require("../routes/utils");
-
-    // Fetch all products
-    const products = await Product.find({});
-
-    // Fetch all seller stocks (with active assignments)
-    const sellerStocks = await getAssignedStocks(true);
-
-    return new ReportDTO(sales, startDate, endDate, products, sellerStocks);
+  static async create(sales, products, sellerStocks, startDate, endDate) {
+    return new ReportDTO(sales, products, sellerStocks, startDate, endDate);
   }
 
   // Method to get a simplified version for API response

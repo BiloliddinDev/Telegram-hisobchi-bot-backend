@@ -44,7 +44,7 @@ router.get("/stocks", async (req, res) => {
     );
 
     res.json({
-      stocks: assignedStocks,
+      sellerStocks: assignedStocks,
       summary: {
         totalProducts,
         totalQuantity,

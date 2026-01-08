@@ -46,6 +46,7 @@ app.use("/api/seller", require("./routes/seller"));
 app.use("/api/admin", require("./routes/admin"));
 app.use("/api/analytics", require("./routes/analytics"));
 app.use("/api/transfers", require("./routes/transfers"));
+app.use("/api/export", require("./routes/export"));
 
 app.get("/api/health", (req, res) => res.json({ status: "OK" }));
 

@@ -498,7 +498,19 @@ router.get("/reports", async (req, res) => {
       .populate("product", "name price")
       .sort({ timestamp: -1 });
 
-    const reportDTO = await ReportDTO.create(sales, startDate, endDate);
+    // Fetch all products
+    const products = await Product.find({});
+
+    // Fetch all seller stocks (with active assignments)
+    const sellerStocks = await getAssignedStocks(true);
+
+    const reportDTO = await ReportDTO.create(
+      sales,
+      products,
+      sellerStocks,
+      startDate,
+      endDate,
+    );
 
     res.json(reportDTO.toJSON());
   } catch (error) {

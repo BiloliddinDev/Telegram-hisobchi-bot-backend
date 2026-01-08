@@ -1,0 +1,319 @@
+{
+  "info": {
+    "name": "Telegram Hisobchi Bot - Export API",
+    "description": "Collection for testing database export endpoints",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "telegram-hisobchi-export"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{authToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5000",
+      "type": "string"
+    },
+    {
+      "key": "authToken",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Login (Get Auth Token)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('authToken', response.token);",
+                  "    pm.environment.set('authToken', response.token);",
+                  "    console.log('Auth token saved:', response.token);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"your_password\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "login"]
+            },
+            "description": "Login to get authentication token. Token is automatically saved to collection variables."
+          },
+          "response": []
+        }
+      ],
+      "description": "Authentication endpoints to get bearer token"
+    },
+    {
+      "name": "Export",
+      "item": [
+        {
+          "name": "Get Database Info",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/export/database/info",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "export", "database", "info"]
+            },
+            "description": "Get statistics about database collections before exporting. Shows record count for each collection."
+          },
+          "response": [
+            {
+              "name": "Success Response",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/export/database/info",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "export", "database", "info"]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"collections\": [\n    { \"name\": \"Users\", \"count\": 45 },\n    { \"name\": \"Categories\", \"count\": 12 },\n    { \"name\": \"Products\", \"count\": 150 },\n    { \"name\": \"Sales\", \"count\": 1250 },\n    { \"name\": \"Transfers\", \"count\": 320 },\n    { \"name\": \"SellerProducts\", \"count\": 180 },\n    { \"name\": \"SellerStock\", \"count\": 95 }\n  ],\n  \"totalRecords\": 2052,\n  \"exportDate\": \"2024-01-15T10:30:00.000Z\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Export Database to Excel",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/export/database",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "export", "database"]
+            },
+            "description": "Export all database collections to Excel file. File will be downloaded automatically. Each collection appears in a separate worksheet with professional formatting."
+          },
+          "response": []
+        },
+        {
+          "name": "Send Export via Telegram",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"destination\": \"telegram\",\n  \"telegramChatId\": \"123456789\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/export/send",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "export", "send"]
+            },
+            "description": "Generate Excel export and send it via Telegram bot to specified chat ID."
+          },
+          "response": [
+            {
+              "name": "Success Response",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"destination\": \"telegram\",\n  \"telegramChatId\": \"123456789\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/export/send",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "export", "send"]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": true,\n  \"message\": \"Export sent via telegram\",\n  \"stats\": [\n    { \"name\": \"Users\", \"count\": 45 },\n    { \"name\": \"Categories\", \"count\": 12 },\n    { \"name\": \"Products\", \"count\": 150 }\n  ]\n}"
+            }
+          ]
+        },
+        {
+          "name": "Send Export to External API",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"destination\": \"api\",\n  \"apiUrl\": \"https://your-api.com/upload\",\n  \"apiHeaders\": {\n    \"X-API-Key\": \"your-api-key\",\n    \"X-Custom-Header\": \"custom-value\"\n  },\n  \"additionalFields\": {\n    \"description\": \"Database export from Telegram Bot\",\n    \"category\": \"backups\",\n    \"timestamp\": \"2024-01-15\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/export/send",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "export", "send"]
+            },
+            "description": "Generate Excel export and send it to an external API endpoint with custom headers and fields."
+          },
+          "response": [
+            {
+              "name": "Success Response",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"destination\": \"api\",\n  \"apiUrl\": \"https://your-api.com/upload\",\n  \"apiHeaders\": {\n    \"X-API-Key\": \"your-api-key\"\n  },\n  \"additionalFields\": {\n    \"description\": \"Database backup\"\n  }\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/export/send",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "export", "send"]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": true,\n  \"message\": \"Export sent via api\",\n  \"response\": {\n    \"fileId\": \"abc123xyz\",\n    \"url\": \"https://your-api.com/files/abc123xyz\",\n    \"status\": \"uploaded\"\n  },\n  \"stats\": [\n    { \"name\": \"Users\", \"count\": 45 },\n    { \"name\": \"Categories\", \"count\": 12 }\n  ]\n}"
+            }
+          ]
+        },
+        {
+          "name": "Custom Collection Export (Not Implemented)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"collections\": [\"Users\", \"Sales\", \"Products\"]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/export/custom",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "export", "custom"]
+            },
+            "description": "Export only selected collections. Currently returns 501 Not Implemented."
+          },
+          "response": []
+        }
+      ],
+      "description": "Database export endpoints",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{authToken}}",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Health Check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/health",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "health"]
+        },
+        "description": "Check if the API server is running"
+      },
+      "response": [
+        {
+          "name": "Success",
+          "originalRequest": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "health"]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"status\": \"OK\"\n}"
+        }
+      ]
+    }
+  ]
+}
