@@ -1,25 +1,28 @@
-const ExcelJS = require('exceljs');
-const mongoose = require('mongoose');
+const ExcelJS = require("exceljs");
+const mongoose = require("mongoose");
 
 // Import all models
-const User = require('../models/User');
-const Category = require('../models/Category');
-const Product = require('../models/Product');
-const Sale = require('../models/Sale');
-const Transfer = require('../models/Transfer');
-const SellerProduct = require('../models/SellerProduct');
-const SellerStock = require('../models/SellerStock');
+const User = require("../models/User");
+const Category = require("../models/Category");
+const Product = require("../models/Product");
+const Sale = require("../models/Sale");
+const Transfer = require("../models/Transfer");
+const SellerProduct = require("../models/SellerProduct");
+const SellerStock = require("../models/SellerStock");
+
+// Import export configuration
+const exportConfig = require("../config/exportConfig");
 
 /**
  * Format cell value for Excel
  */
 const formatCellValue = (value) => {
-  if (value === null || value === undefined) return '';
+  if (value === null || value === undefined) return "";
   if (value instanceof Date) return value.toISOString();
-  if (mongoose.Types.ObjectId.isValid(value) && typeof value === 'object') {
+  if (mongoose.Types.ObjectId.isValid(value) && typeof value === "object") {
     return value.toString();
   }
-  if (typeof value === 'object') return JSON.stringify(value);
+  if (typeof value === "object") return JSON.stringify(value);
   return value;
 };
 
@@ -28,13 +31,13 @@ const formatCellValue = (value) => {
  */
 const styleHeaderRow = (worksheet) => {
   const headerRow = worksheet.getRow(1);
-  headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+  headerRow.font = { bold: true, color: { argb: "FFFFFFFF" } };
   headerRow.fill = {
-    type: 'pattern',
-    pattern: 'solid',
-    fgColor: { argb: 'FF4472C4' }
+    type: "pattern",
+    pattern: "solid",
+    fgColor: { argb: "FF4472C4" },
   };
-  headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
+  headerRow.alignment = { vertical: "middle", horizontal: "center" };
   headerRow.height = 25;
 };
 
@@ -42,9 +45,9 @@ const styleHeaderRow = (worksheet) => {
  * Auto-fit columns based on content
  */
 const autoFitColumns = (worksheet) => {
-  worksheet.columns.forEach(column => {
+  worksheet.columns.forEach((column) => {
     let maxLength = 10;
-    column.eachCell({ includeEmpty: false }, cell => {
+    column.eachCell({ includeEmpty: false }, (cell) => {
       const cellLength = cell.value ? cell.value.toString().length : 10;
       if (cellLength > maxLength) {
         maxLength = cellLength;
@@ -61,9 +64,9 @@ const addAlternatingRowColors = (worksheet, startRow = 2) => {
   worksheet.eachRow((row, rowNumber) => {
     if (rowNumber >= startRow && rowNumber % 2 === 0) {
       row.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FFF2F2F2' }
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FFF2F2F2" },
       };
     }
   });
@@ -72,16 +75,26 @@ const addAlternatingRowColors = (worksheet, startRow = 2) => {
 /**
  * Export a single model to worksheet
  */
-const exportModelToWorksheet = async (workbook, modelName, Model, options = {}) => {
+const exportModelToWorksheet = async (
+  workbook,
+  modelName,
+  Model,
+  options = {},
+) => {
   try {
     console.log(`Exporting ${modelName}...`);
 
     // Fetch data with population if needed
     let query = Model.find({});
 
+    // Apply field selection if specified
+    if (options.select) {
+      query = query.select(options.select);
+    }
+
     // Apply population based on model
     if (options.populate) {
-      options.populate.forEach(pop => {
+      options.populate.forEach((pop) => {
         query = query.populate(pop);
       });
     }
@@ -96,34 +109,71 @@ const exportModelToWorksheet = async (workbook, modelName, Model, options = {}) 
     // Create worksheet
     const worksheet = workbook.addWorksheet(modelName);
 
+    // Get sensitive fields from config or use defaults
+    const sensitiveFields = exportConfig.global?.defaultSensitiveFields || [
+      "password",
+      "passwordHash",
+      "token",
+      "refreshToken",
+      "apiKey",
+      "secret",
+      "__v",
+    ];
+
+    // Get fields to exclude (sensitive + custom excludes)
+    const excludeFields = [
+      ...sensitiveFields,
+      ...(options.excludeFields || []),
+    ];
+
     // Get all unique keys from the data
     const allKeys = new Set();
-    data.forEach(item => {
-      Object.keys(item).forEach(key => {
-        if (key !== '__v') { // Exclude version key
+    data.forEach((item) => {
+      Object.keys(item).forEach((key) => {
+        // Exclude sensitive fields and version key
+        if (!excludeFields.includes(key)) {
           allKeys.add(key);
         }
       });
     });
 
-    const columns = Array.from(allKeys).map(key => ({
-      header: key.charAt(0).toUpperCase() + key.slice(1).replace(/([A-Z])/g, ' $1').trim(),
+    // If specific fields are requested, filter to only those
+    let fieldsToExport = Array.from(allKeys);
+    if (options.includeFields && options.includeFields.length > 0) {
+      fieldsToExport = fieldsToExport.filter((key) =>
+        options.includeFields.includes(key),
+      );
+    }
+
+    const columns = fieldsToExport.map((key) => ({
+      header:
+        key.charAt(0).toUpperCase() +
+        key
+          .slice(1)
+          .replace(/([A-Z])/g, " $1")
+          .trim(),
       key: key,
-      width: 15
+      width: 15,
     }));
 
     worksheet.columns = columns;
 
     // Add data rows
-    data.forEach(item => {
+    data.forEach((item) => {
       const row = {};
-      columns.forEach(col => {
+      columns.forEach((col) => {
         let value = item[col.key];
 
         // Handle populated references
-        if (value && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date)) {
+        if (
+          value &&
+          typeof value === "object" &&
+          !Array.isArray(value) &&
+          !(value instanceof Date)
+        ) {
           if (value.username) value = value.username;
-          else if (value.firstName && value.lastName) value = `${value.firstName} ${value.lastName}`;
+          else if (value.firstName && value.lastName)
+            value = `${value.firstName} ${value.lastName}`;
           else if (value.name) value = value.name;
           else if (value._id) value = value._id.toString();
         }
@@ -141,7 +191,7 @@ const exportModelToWorksheet = async (workbook, modelName, Model, options = {}) 
     // Add filters
     worksheet.autoFilter = {
       from: { row: 1, column: 1 },
-      to: { row: 1, column: columns.length }
+      to: { row: 1, column: columns.length },
     };
 
     console.log(`${modelName} exported: ${data.length} records`);
@@ -157,30 +207,32 @@ const exportModelToWorksheet = async (workbook, modelName, Model, options = {}) 
  * Create summary worksheet
  */
 const createSummaryWorksheet = (workbook, stats) => {
-  const worksheet = workbook.addWorksheet('Summary', { properties: { tabColor: { argb: 'FF00FF00' } } });
+  const worksheet = workbook.addWorksheet("Summary", {
+    properties: { tabColor: { argb: "FF00FF00" } },
+  });
 
   worksheet.columns = [
-    { header: 'Collection', key: 'collection', width: 30 },
-    { header: 'Record Count', key: 'count', width: 20 },
-    { header: 'Export Date', key: 'date', width: 25 }
+    { header: "Collection", key: "collection", width: 30 },
+    { header: "Record Count", key: "count", width: 20 },
+    { header: "Export Date", key: "date", width: 25 },
   ];
 
   const exportDate = new Date().toLocaleString();
 
-  stats.forEach(stat => {
+  stats.forEach((stat) => {
     worksheet.addRow({
       collection: stat.name,
       count: stat.count,
-      date: exportDate
+      date: exportDate,
     });
   });
 
   // Add total row
   const totalCount = stats.reduce((sum, stat) => sum + stat.count, 0);
   worksheet.addRow({
-    collection: 'TOTAL',
+    collection: "TOTAL",
     count: totalCount,
-    date: ''
+    date: "",
   });
 
   // Style header
@@ -190,9 +242,9 @@ const createSummaryWorksheet = (workbook, stats) => {
   const lastRow = worksheet.lastRow;
   lastRow.font = { bold: true };
   lastRow.fill = {
-    type: 'pattern',
-    pattern: 'solid',
-    fgColor: { argb: 'FFFFEB3B' }
+    type: "pattern",
+    pattern: "solid",
+    fgColor: { argb: "FFFFEB3B" },
   };
 
   autoFitColumns(worksheet);
@@ -204,61 +256,50 @@ const createSummaryWorksheet = (workbook, stats) => {
 const exportAllTablesToExcel = async (options = {}) => {
   const workbook = new ExcelJS.Workbook();
 
-  workbook.creator = 'Telegram Hisobchi Bot';
+  workbook.creator = "Telegram Hisobchi Bot";
   workbook.created = new Date();
   workbook.modified = new Date();
 
   const stats = [];
 
-  // Define models to export with their population options
+  // Define models to export with their configuration
+  // Configuration is loaded from config/exportConfig.js
   const modelsToExport = [
     {
-      name: 'Users',
+      name: "Users",
       model: User,
-      populate: []
+      ...exportConfig.users,
     },
     {
-      name: 'Categories',
+      name: "Categories",
       model: Category,
-      populate: []
+      ...exportConfig.categories,
     },
     {
-      name: 'Products',
+      name: "Products",
       model: Product,
-      populate: [{ path: 'category', select: 'name' }]
+      ...exportConfig.products,
     },
     {
-      name: 'Sales',
+      name: "Sales",
       model: Sale,
-      populate: [
-        { path: 'seller', select: 'username firstName lastName' },
-        { path: 'product', select: 'name price' }
-      ]
+      ...exportConfig.sales,
     },
     {
-      name: 'Transfers',
+      name: "Transfers",
       model: Transfer,
-      populate: [
-        { path: 'seller', select: 'username firstName lastName' },
-        { path: 'product', select: 'name' }
-      ]
+      ...exportConfig.transfers,
     },
     {
-      name: 'SellerProducts',
+      name: "SellerProducts",
       model: SellerProduct,
-      populate: [
-        { path: 'seller', select: 'username firstName lastName' },
-        { path: 'product', select: 'name' }
-      ]
+      ...exportConfig.sellerProducts,
     },
     {
-      name: 'SellerStock',
+      name: "SellerStock",
       model: SellerStock,
-      populate: [
-        { path: 'seller', select: 'username firstName lastName' },
-        { path: 'product', select: 'name' }
-      ]
-    }
+      ...exportConfig.sellerStock,
+    },
   ];
 
   // Export each model
@@ -268,7 +309,12 @@ const exportAllTablesToExcel = async (options = {}) => {
         workbook,
         modelConfig.name,
         modelConfig.model,
-        { populate: modelConfig.populate }
+        {
+          populate: modelConfig.populate,
+          select: modelConfig.select,
+          excludeFields: modelConfig.excludeFields,
+          includeFields: modelConfig.includeFields,
+        },
       );
 
       stats.push({ name: modelConfig.name, count: count || 0 });
@@ -287,5 +333,5 @@ const exportAllTablesToExcel = async (options = {}) => {
 module.exports = {
   exportAllTablesToExcel,
   exportModelToWorksheet,
-  formatCellValue
+  formatCellValue,
 };

@@ -140,57 +140,6 @@ router.get("/database/info", authenticate, isAdmin, async (req, res) => {
 
 /**
  * @swagger
- * /api/export/custom:
- *   post:
- *     summary: Export custom selection of tables
- *     tags: [Export]
- *     security:
- *       - TelegramAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               collections:
- *                 type: array
- *                 items:
- *                   type: string
- *                 example: ["Users", "Sales", "Products"]
- *     responses:
- *       200:
- *         description: Excel file with selected tables
- *       401:
- *         description: Unauthorized
- */
-router.post("/custom", authenticate, isAdmin, async (req, res) => {
-  try {
-    const { collections } = req.body;
-
-    if (
-      !collections ||
-      !Array.isArray(collections) ||
-      collections.length === 0
-    ) {
-      return res
-        .status(400)
-        .json({ error: "Please provide collections array" });
-    }
-
-    // TODO: Implement custom collection export
-    res.status(501).json({ message: "Custom export not yet implemented" });
-  } catch (error) {
-    console.error("Error in custom export:", error);
-    res.status(500).json({
-      error: "Failed to export custom data",
-      message: error.message,
-    });
-  }
-});
-
-/**
- * @swagger
  * /api/export/send:
  *   post:
  *     summary: Send database export to external destination
