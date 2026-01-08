@@ -1,8 +1,11 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const { authenticate, authorizeRoles } = require('../middleware/auth');
-const { exportAllTablesToExcel } = require('../utils/excelExporter');
-const { sendExcelToAPI, sendExcelViaTelegram } = require('../utils/excelSender');
+const { authenticate, isAdmin } = require("../middleware/auth");
+const { exportAllTablesToExcel } = require("../utils/excelExporter");
+const {
+  sendExcelToAPI,
+  sendExcelViaTelegram,
+} = require("../utils/excelSender");
 
 /**
  * @swagger
@@ -41,34 +44,36 @@ const { sendExcelToAPI, sendExcelViaTelegram } = require('../utils/excelSender')
  *       500:
  *         description: Server error
  */
-router.get('/database', authenticate, authorizeRoles('admin'), async (req, res) => {
+router.get("/database", authenticate, isAdmin, async (req, res) => {
   try {
-    console.log('Starting database export...');
+    console.log("Starting database export...");
 
     const { workbook, stats } = await exportAllTablesToExcel();
 
     // Generate filename with timestamp
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').split('T')[0];
+    const timestamp = new Date()
+      .toISOString()
+      .replace(/[:.]/g, "-")
+      .split("T")[0];
     const filename = `database_export_${timestamp}.xlsx`;
 
     // Set response headers
     res.setHeader(
-      'Content-Type',
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     );
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
 
     // Write to response
     await workbook.xlsx.write(res);
 
-    console.log('Database export completed successfully');
-    console.log('Export stats:', stats);
-
+    console.log("Database export completed successfully");
+    console.log("Export stats:", stats);
   } catch (error) {
-    console.error('Error exporting database:', error);
+    console.error("Error exporting database:", error);
     res.status(500).json({
-      error: 'Failed to export database',
-      message: error.message
+      error: "Failed to export database",
+      message: error.message,
     });
   }
 });
@@ -89,15 +94,15 @@ router.get('/database', authenticate, authorizeRoles('admin'), async (req, res) 
  *       403:
  *         description: Forbidden - Admin only
  */
-router.get('/database/info', authenticate, authorizeRoles('admin'), async (req, res) => {
+router.get("/database/info", authenticate, isAdmin, async (req, res) => {
   try {
-    const User = require('../models/User');
-    const Category = require('../models/Category');
-    const Product = require('../models/Product');
-    const Sale = require('../models/Sale');
-    const Transfer = require('../models/Transfer');
-    const SellerProduct = require('../models/SellerProduct');
-    const SellerStock = require('../models/SellerStock');
+    const User = require("../models/User");
+    const Category = require("../models/Category");
+    const Product = require("../models/Product");
+    const Sale = require("../models/Sale");
+    const Transfer = require("../models/Transfer");
+    const SellerProduct = require("../models/SellerProduct");
+    const SellerStock = require("../models/SellerStock");
 
     const stats = await Promise.all([
       User.countDocuments(),
@@ -106,29 +111,29 @@ router.get('/database/info', authenticate, authorizeRoles('admin'), async (req, 
       Sale.countDocuments(),
       Transfer.countDocuments(),
       SellerProduct.countDocuments(),
-      SellerStock.countDocuments()
+      SellerStock.countDocuments(),
     ]);
 
     const info = {
       collections: [
-        { name: 'Users', count: stats[0] },
-        { name: 'Categories', count: stats[1] },
-        { name: 'Products', count: stats[2] },
-        { name: 'Sales', count: stats[3] },
-        { name: 'Transfers', count: stats[4] },
-        { name: 'SellerProducts', count: stats[5] },
-        { name: 'SellerStock', count: stats[6] }
+        { name: "Users", count: stats[0] },
+        { name: "Categories", count: stats[1] },
+        { name: "Products", count: stats[2] },
+        { name: "Sales", count: stats[3] },
+        { name: "Transfers", count: stats[4] },
+        { name: "SellerProducts", count: stats[5] },
+        { name: "SellerStock", count: stats[6] },
       ],
       totalRecords: stats.reduce((sum, count) => sum + count, 0),
-      exportDate: new Date().toISOString()
+      exportDate: new Date().toISOString(),
     };
 
     res.json(info);
   } catch (error) {
-    console.error('Error getting database info:', error);
+    console.error("Error getting database info:", error);
     res.status(500).json({
-      error: 'Failed to get database info',
-      message: error.message
+      error: "Failed to get database info",
+      message: error.message,
     });
   }
 });
@@ -159,22 +164,27 @@ router.get('/database/info', authenticate, authorizeRoles('admin'), async (req, 
  *       401:
  *         description: Unauthorized
  */
-router.post('/custom', authenticate, authorizeRoles('admin'), async (req, res) => {
+router.post("/custom", authenticate, isAdmin, async (req, res) => {
   try {
     const { collections } = req.body;
 
-    if (!collections || !Array.isArray(collections) || collections.length === 0) {
-      return res.status(400).json({ error: 'Please provide collections array' });
+    if (
+      !collections ||
+      !Array.isArray(collections) ||
+      collections.length === 0
+    ) {
+      return res
+        .status(400)
+        .json({ error: "Please provide collections array" });
     }
 
     // TODO: Implement custom collection export
-    res.status(501).json({ message: 'Custom export not yet implemented' });
-
+    res.status(501).json({ message: "Custom export not yet implemented" });
   } catch (error) {
-    console.error('Error in custom export:', error);
+    console.error("Error in custom export:", error);
     res.status(500).json({
-      error: 'Failed to export custom data',
-      message: error.message
+      error: "Failed to export custom data",
+      message: error.message,
     });
   }
 });
@@ -217,70 +227,77 @@ router.post('/custom', authenticate, authorizeRoles('admin'), async (req, res) =
  *       401:
  *         description: Unauthorized
  */
-router.post('/send', authenticate, authorizeRoles('admin'), async (req, res) => {
+router.post("/send", authenticate, isAdmin, async (req, res) => {
   try {
-    const { destination, telegramChatId, apiUrl, apiHeaders, additionalFields } = req.body;
+    const {
+      destination,
+      telegramChatId,
+      apiUrl,
+      apiHeaders,
+      additionalFields,
+    } = req.body;
 
     if (!destination) {
-      return res.status(400).json({ error: 'Destination is required' });
+      return res.status(400).json({ error: "Destination is required" });
     }
 
     let result;
 
     switch (destination) {
-      case 'telegram':
+      case "telegram":
         if (!telegramChatId) {
-          return res.status(400).json({ error: 'Telegram chat ID is required' });
+          return res
+            .status(400)
+            .json({ error: "Telegram chat ID is required" });
         }
 
         // Check if bot is available
         try {
-          const bot = require('../bot/index');
+          const bot = require("../bot/index");
           if (!bot) {
-            throw new Error('Bot not initialized');
+            throw new Error("Bot not initialized");
           }
           result = await sendExcelViaTelegram(telegramChatId, bot);
         } catch (botError) {
-          console.error('Bot error:', botError);
+          console.error("Bot error:", botError);
           return res.status(500).json({
-            error: 'Telegram bot not available',
-            message: 'Please ensure the bot is properly configured'
+            error: "Telegram bot not available",
+            message: "Please ensure the bot is properly configured",
           });
         }
         break;
 
-      case 'api':
+      case "api":
         if (!apiUrl) {
-          return res.status(400).json({ error: 'API URL is required' });
+          return res.status(400).json({ error: "API URL is required" });
         }
 
         result = await sendExcelToAPI(apiUrl, {
           headers: apiHeaders || {},
-          additionalFields: additionalFields || {}
+          additionalFields: additionalFields || {},
         });
         break;
 
-      case 'email':
+      case "email":
         return res.status(501).json({
-          error: 'Email sending not yet implemented',
-          message: 'Please use telegram or api destination'
+          error: "Email sending not yet implemented",
+          message: "Please use telegram or api destination",
         });
 
       default:
-        return res.status(400).json({ error: 'Invalid destination' });
+        return res.status(400).json({ error: "Invalid destination" });
     }
 
     res.json({
       success: true,
       message: `Export sent via ${destination}`,
-      ...result
+      ...result,
     });
-
   } catch (error) {
-    console.error('Error sending export:', error);
+    console.error("Error sending export:", error);
     res.status(500).json({
-      error: 'Failed to send export',
-      message: error.message
+      error: "Failed to send export",
+      message: error.message,
     });
   }
 });
