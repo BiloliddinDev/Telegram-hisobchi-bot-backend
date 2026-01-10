@@ -69,7 +69,7 @@ module.exports = {
     excludeFields: [],
     populate: [
       { path: "seller", select: "username firstName lastName" },
-      { path: "product", select: "name sku price" },
+      { path: "product", select: "name sku price costPrice" },
     ],
   },
 

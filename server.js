@@ -9,14 +9,12 @@ const NODE_ENV = (process.env.NODE_ENV || "development").trim();
 (async () => {
   await connectDB();
 
-  // Initialize admin user
-  await initializeAdmin();
-
   // Load Telegram bot only in production
   if (NODE_ENV === "production") {
     console.log("🤖 Loading Telegram bot for production environment...");
     require("./bot/telegram");
   } else {
+    await initializeAdmin();
     console.log("🔧 Development mode: Telegram bot disabled");
   }
 

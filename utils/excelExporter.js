@@ -118,6 +118,7 @@ const exportModelToWorksheet = async (
       "apiKey",
       "secret",
       "__v",
+      "_id",
     ];
 
     // Get fields to exclude (sensitive + custom excludes)
@@ -313,7 +314,6 @@ const exportAllTablesToExcel = async (options = {}) => {
           populate: modelConfig.populate,
           select: modelConfig.select,
           excludeFields: modelConfig.excludeFields,
-          includeFields: modelConfig.includeFields,
         },
       );
 
