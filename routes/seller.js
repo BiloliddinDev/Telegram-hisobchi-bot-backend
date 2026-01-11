@@ -40,7 +40,7 @@ router.get("/stocks", async (req, res) => {
     const totalProducts = assignedStocks.length;
     const totalQuantity = assignedStocks.reduce(
       (total, row) => total + (row.stock?.quantity || 0),
-      0,
+      0
     );
 
     res.json({
@@ -63,7 +63,7 @@ router.get("/stocks/product/:productId", async (req, res) => {
 
     const stock = await SellerStock.findBySellerAndProduct(
       req.user._id,
-      productId,
+      productId
     );
 
     if (!stock) {
@@ -83,13 +83,16 @@ router.get("/stocks/product/:productId", async (req, res) => {
 // Get sellerId's sales
 router.get("/sales", async (req, res) => {
   try {
-    const { startDate, endDate } = req.query;
+    const { start, end } = req.query;
     const query = { seller: req.user._id };
 
-    if (startDate && endDate) {
+    if (start && end) {
+      const startDate = new Date(`${start}T00:00:00.000Z`);
+      const endDate = new Date(`${end}T23:59:59.999Z`);
+
       query.timestamp = {
-        $gte: new Date(startDate),
-        $lte: new Date(endDate),
+        $gte: startDate,
+        $lte: endDate,
       };
     }
 
@@ -99,6 +102,7 @@ router.get("/sales", async (req, res) => {
 
     res.json({ sales });
   } catch (error) {
+    console.error("Sales Error:", error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -110,7 +114,7 @@ router.get("/reports", async (req, res) => {
     const startDate = new Date(
       year || new Date().getFullYear(),
       (month || new Date().getMonth()) - 1,
-      1,
+      1
     );
     const endDate = new Date(
       year || new Date().getFullYear(),
@@ -118,7 +122,7 @@ router.get("/reports", async (req, res) => {
       0,
       23,
       59,
-      59,
+      59
     );
 
     const sales = await Sale.find({
