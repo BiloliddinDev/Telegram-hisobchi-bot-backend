@@ -717,78 +717,72 @@
  */
 
 /**
- * @swagger
+ * @openapi
  * /api/admin/sellers/{sellerId}/sales:
- *   get:
- *     tags:
- *        - Admin - Sales Management
- *     summary: Get sales for specific seller
- *     description: Returns all sales for a specific seller
- *     security:
- *       - TelegramAuth: []
- *     parameters:
- *       - in: path
- *         name: sellerId
- *         required: true
- *         schema:
- *           type: string
- *         description: Seller ID
- *     responses:
- *       200:
- *         description: Seller details retrieved successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 sa:
- *                   type: array
- *                   items:
- *                     $ref: '#/components/schemas/Sale'
- *                 message:
- *                   type: string
- *                   description: Message if no sales found
- *                   example: "No sales found for this seller"
+ * get:
+ * tags:
+ * - Admin - Sales Management
+ * summary: Sotuvchi savdolarini olish
+ * description: Sotuvchi tomonidan amalga oshirilgan barcha sotuvlarni yoki ma'lum bir kundagi sotuvlarni qaytaradi.
+ * security:
+ * - TelegramAuth: []
+ * parameters:
+ * - in: path
+ * name: sellerId
+ * required: true
+ * schema:
+ * type: string
+ * description: Sotuvchining unikal ID raqami
+ * - in: query
+ * name: date
+ * required: false
+ * schema:
+ * type: string
+ * format: date
+ * description: Savdolarni sana bo'yicha filtrlash (Format: YYYY-MM-DD). Agar yuborilmasa, hamma vaqtdagi savdolarni qaytaradi.
+ * example: "2023-10-27"
+ * responses:
+ * 200:
+ * description: Sotuvlar va statistika muvaffaqiyatli olindi
+ * content:
+ * application/json:
+ * schema:
+ * type: object
+ * properties:
+ * sales:
+ * type: array
+ * items:
+ * $ref: '#/components/schemas/Sale'
+ * description: Sotuvlar ro'yxati
+ * stats:
+ * type: object
+ * properties:
+ * totalSalesAmount:
+ * type: number
+ * description: Jami savdo summasi
+ * example: 1500.50
+ * totalQuantity:
+ * type: number
+ * description: Jami sotilgan mahsulotlar soni
+ * example: 45
+ * count:
+ * type: number
+ * description: Tranzaksiyalar soni
+ * example: 12
+ * message:
+ * type: string
+ * description: Qo'shimcha xabar
+ * example: "No sales found for this seller"
+ * 500:
+ * description: Server xatoligi
+ * content:
+ * application/json:
+ * schema:
+ * type: object
+ * properties:
+ * error:
+ * type: string
  */
-
-/**
- * @swagger
- * /api/admin/reports:
- *   get:
- *     tags:
- *       - Admin - Reports
- *     summary: Get comprehensive report
- *     description: Returns detailed sales report with analytics, seller performance, and product insights
- *     security:
- *       - TelegramAuth: []
- *     parameters:
- *       - in: query
- *         name: start
- *         schema:
- *           type: string
- *         description: start date
- *         example: 2026-01-01
- *       - in: query
- *         name: end
- *         schema:
- *           type: string
- *         description: end date
- *         example: 2026-02-01
- *     responses:
- *       200:
- *         description: Range report retrieved successfully
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Report'
- *       401:
- *         description: Authentication required
- *       403:
- *         description: Admin access required
- *       500:
- *         description: Server error
- */
-
 /**
  * @swagger
  * /api/admin/sellers/{id}:

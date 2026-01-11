@@ -54,7 +54,7 @@ const saleSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-  },
+  }
 );
 
 saleSchema.index({ seller: 1, product: 1 });

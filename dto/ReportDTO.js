@@ -24,68 +24,74 @@ class ReportDTO {
   }
 
   _calculateSummary(sales, products, sellerStocks) {
-    // Calculate product statistics
+    // 1. Asosiy Ombor statistikasi
     const totalProducts = products.length;
     const totalProductQuantity = products.reduce(
       (sum, product) => sum + (product.warehouseQuantity || 0),
-      0,
+      0
     );
     const totalProductCostPrice = products.reduce(
       (sum, product) =>
         sum + (product.warehouseQuantity || 0) * (product.costPrice || 0),
-      0,
+      0
     );
 
-    // Calculate seller stock statistics
+    // 2. Sotuvchilardagi qoldiq statistikasi
     const totalSellerStocks = sellerStocks.length;
     const totalSellerStockQuantity = sellerStocks.reduce(
       (sum, stock) => sum + (stock.stock?.quantity || 0),
-      0,
+      0
     );
     const totalSellerStockCostPrice = sellerStocks.reduce(
       (sum, stock) =>
         sum + (stock.stock?.quantity || 0) * (stock.product?.costPrice || 0),
-      0,
+      0
     );
 
-    // Calculate sales statistics
+    // 3. Savdo va FOYDA statistikasi
     const totalSales = sales.length;
     const totalRevenue = sales.reduce(
       (sum, sale) => sum + (sale.totalAmount || 0),
-      0,
+      0
     );
     const totalSalesQuantity = sales.reduce(
       (sum, sale) => sum + (sale.quantity || 0),
-      0,
+      0
     );
 
-    // Get unique sellers and products from sales
+    // --- FOYDA HISOB-KITOBI ---
+    // Har bir sotuvdan (sotilgan dona * tannarx) ni hisoblaymiz
+    const totalSoldCostPrice = sales.reduce((sum, sale) => {
+      // product obyekti populate qilingan bo'lishi shart
+      const costPrice = sale.product?.costPrice || 0;
+      return sum + (sale.quantity || 0) * costPrice;
+    }, 0);
+
+    const totalProfit = totalRevenue - totalSoldCostPrice;
+    // ---------------------------
+
     const uniqueSellers = new Set(
-      sales.map((sale) => sale.seller?._id?.toString()).filter(Boolean),
-    );
-    const uniqueProductsInSales = new Set(
-      sales.map((sale) => sale.product?._id?.toString()).filter(Boolean),
+      sales.map((sale) => sale.seller?._id?.toString()).filter(Boolean)
     );
 
     return {
-      // Product statistics
       products: {
         totalProducts,
         totalProductQuantity,
         totalProductCostPrice,
       },
-      // Seller stock statistics
       sellerStocks: {
         totalSellerStocks,
         totalSellerStockQuantity,
         totalSellerStockCostPrice,
       },
-      // Sales statistics
       sales: {
         totalSales,
         totalRevenue,
+        totalProfit, // Frontendga boradigan yangi maydon
         totalSalesQuantity,
         totalSellers: uniqueSellers.size,
+        averageSaleAmount: totalSales > 0 ? totalRevenue / totalSales : 0,
       },
     };
   }
@@ -104,8 +110,9 @@ class ReportDTO {
             username: sale.sellerId.username,
             firstName: sale.sellerId.firstName,
             lastName: sale.sellerId.lastName,
-            fullName:
-              `${sale.sellerId.firstName || ""} ${sale.sellerId.lastName || ""}`.trim(),
+            fullName: `${sale.sellerId.firstName || ""} ${
+              sale.sellerId.lastName || ""
+            }`.trim(),
           },
           stats: {
             totalSales: 0,
@@ -129,7 +136,7 @@ class ReportDTO {
     });
 
     return Object.values(salesBySeller).sort(
-      (a, b) => b.stats.totalRevenue - a.stats.totalRevenue,
+      (a, b) => b.stats.totalRevenue - a.stats.totalRevenue
     );
   }
 
@@ -169,7 +176,7 @@ class ReportDTO {
     });
 
     return Object.values(salesByProduct).sort(
-      (a, b) => b.stats.totalRevenue - a.stats.totalRevenue,
+      (a, b) => b.stats.totalRevenue - a.stats.totalRevenue
     );
   }
 
@@ -210,11 +217,11 @@ class ReportDTO {
     return {
       topSellerByRevenue:
         Object.values(sellerStats).sort(
-          (a, b) => b.totalRevenue - a.totalRevenue,
+          (a, b) => b.totalRevenue - a.totalRevenue
         )[0] || null,
       topProductByQuantity:
         Object.values(productStats).sort(
-          (a, b) => b.totalQuantity - a.totalQuantity,
+          (a, b) => b.totalQuantity - a.totalQuantity
         )[0] || null,
     };
   }
@@ -246,7 +253,7 @@ class ReportDTO {
     });
 
     return Object.values(dailySales).sort((a, b) =>
-      a.date.localeCompare(b.date),
+      a.date.localeCompare(b.date)
     );
   }
 

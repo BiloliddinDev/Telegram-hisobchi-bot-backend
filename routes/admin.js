@@ -18,7 +18,6 @@ const {
 } = require("./utils");
 const { get } = require("./products");
 
-// All admin routes require authentication and admin role
 router.use(authenticate);
 router.use(isAdmin);
 
@@ -97,7 +96,7 @@ router.put("/sellers/:id", async (req, res) => {
     const seller = await User.findByIdAndUpdate(
       req.params.id,
       { username, firstName, lastName, phoneNumber, avatarUrl, isActive },
-      { new: true },
+      { new: true }
     ).select("-__v");
 
     res.json({ seller });
@@ -151,7 +150,7 @@ router.get("/sellers/:sellerId/products", async (req, res) => {
     }
 
     const products = sellerProducts.map(
-      (sellerProduct) => sellerProduct.product,
+      (sellerProduct) => sellerProduct.product
     );
 
     res.json({ products });
@@ -178,17 +177,61 @@ router.get("/sellers/:sellerId/stocks", async (req, res) => {
 router.get("/sellers/:sellerId/sales", async (req, res) => {
   try {
     const { sellerId } = req.params;
+    const { date } = req.query; // Masalan: ?date=2023-10-25
 
-    const sales = await Sale.find({ seller: sellerId });
+    let matchStage = { seller: new mongoose.Types.ObjectId(sellerId) };
+
+    if (date) {
+      const startOfDay = new Date(date);
+      startOfDay.setHours(0, 0, 0, 0);
+
+      const endOfDay = new Date(date);
+      endOfDay.setHours(23, 59, 59, 999);
+
+      matchStage.createdAt = {
+        $gte: startOfDay,
+        $lte: endOfDay,
+      };
+    }
+
+    const result = await Sale.aggregate([
+      { $match: matchStage },
+      {
+        $facet: {
+          salesList: [{ $sort: { createdAt: -1 } }],
+          stats: [
+            {
+              $group: {
+                _id: null,
+                totalSalesAmount: { $sum: "$totalAmount" },
+                totalQuantity: { $sum: "$quantity" },
+                count: { $sum: 1 },
+              },
+            },
+          ],
+        },
+      },
+    ]);
+
+    const sales = result[0].salesList;
+    const stats = result[0].stats[0] || {
+      totalSalesAmount: 0,
+      totalQuantity: 0,
+      count: 0,
+    };
 
     if (!sales || sales.length === 0) {
       return res.json({
         sales: [],
-        message: "No sales found for this seller",
+        stats,
+        message: "Sotuvlar topilmadi",
       });
     }
 
-    res.json({ sales });
+    res.json({
+      sales,
+      stats,
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -238,7 +281,7 @@ router.patch("/seller-stocks/:stockId", async (req, res) => {
       if (sellerStock.quantity === 0) {
         const sellerProduct = await SellerProduct.findBySellerAndProduct(
           sellerStock.seller._id,
-          sellerStock.product._id,
+          sellerStock.product._id
         ).session(session);
 
         if (!sellerProduct || !sellerProduct.isActive) {
@@ -252,7 +295,7 @@ router.patch("/seller-stocks/:stockId", async (req, res) => {
 
       if (maxAllowed < quantity) {
         throw new Error(
-          `Cannot set quantity to ${quantity}. Max allowed is ${maxAllowed}`,
+          `Cannot set quantity to ${quantity}. Max allowed is ${maxAllowed}`
         );
       }
 
@@ -275,7 +318,7 @@ router.patch("/seller-stocks/:stockId", async (req, res) => {
               status: "completed",
             },
           ],
-          { session },
+          { session }
         );
       }
     });
@@ -312,7 +355,7 @@ router.post(
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
-  },
+  }
 );
 
 // unassign product from seller
@@ -328,7 +371,7 @@ router.delete(
         // Relationship check
         const sellerProduct = await SellerProduct.findBySellerAndProduct(
           sellerId,
-          productId,
+          productId
         ).session(session);
 
         if (!sellerProduct || !sellerProduct.isActive) {
@@ -338,7 +381,7 @@ router.delete(
         // 2. Stock lookup
         const existingSellerStock = await SellerStock.findBySellerAndProduct(
           sellerId,
-          productId,
+          productId
         ).session(session);
 
         const quantity = existingSellerStock?.quantity || 0;
@@ -346,7 +389,7 @@ router.delete(
         if (quantity > 0) {
           if (!returnStock) {
             throw new Error(
-              "Seller has remaining stock. Use returnStock=true to return it.",
+              "Seller has remaining stock. Use returnStock=true to return it."
             );
           }
 
@@ -367,7 +410,7 @@ router.delete(
                 status: "completed",
               },
             ],
-            { session },
+            { session }
           );
         }
 
@@ -385,7 +428,7 @@ router.delete(
     } finally {
       await session.endSession();
     }
-  },
+  }
 );
 
 // Delete seller stock - Return all stock to warehouse and remove stock record
@@ -436,7 +479,7 @@ router.delete("/seller-stocks/:stockId", async (req, res) => {
               status: "completed",
             },
           ],
-          { session },
+          { session }
         );
       }
 
@@ -444,7 +487,7 @@ router.delete("/seller-stocks/:stockId", async (req, res) => {
       if (unassign === "true") {
         const sellerProduct = await SellerProduct.findBySellerAndProduct(
           existingSellerStock.seller._id,
-          existingSellerStock.product._id,
+          existingSellerStock.product._id
         ).session(session);
 
         if (sellerProduct && sellerProduct.isActive) {
@@ -506,7 +549,7 @@ router.get("/reports", async (req, res) => {
       },
     })
       .populate("seller", "username firstName lastName")
-      .populate("product", "name price")
+      .populate("product", "name price costPrice")
       .sort({ timestamp: -1 });
 
     // Fetch all products
@@ -520,7 +563,7 @@ router.get("/reports", async (req, res) => {
       products,
       sellerStocks,
       startDate,
-      endDate,
+      endDate
     );
 
     res.json(reportDTO.toJSON());
