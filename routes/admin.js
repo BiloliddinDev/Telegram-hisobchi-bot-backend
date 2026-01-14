@@ -177,14 +177,13 @@ router.get("/sellers/:sellerId/stocks", async (req, res) => {
 router.get("/sellers/:sellerId/sales", async (req, res) => {
   try {
     const { sellerId } = req.params;
-    const { date } = req.query; // Masalan: ?date=2023-10-25
+    const { date } = req.query;
 
     let matchStage = { seller: new mongoose.Types.ObjectId(sellerId) };
 
     if (date) {
       const startOfDay = new Date(date);
       startOfDay.setHours(0, 0, 0, 0);
-
       const endOfDay = new Date(date);
       endOfDay.setHours(23, 59, 59, 999);
 
@@ -196,9 +195,38 @@ router.get("/sellers/:sellerId/sales", async (req, res) => {
 
     const result = await Sale.aggregate([
       { $match: matchStage },
+      // 1. Products kolleksiyasi bilan bog'laymiz
+      {
+        $lookup: {
+          from: "products", // Kolleksiya nomi (odatda kichik harf va ko'plikda)
+          localField: "product", // Sale modelidagi field nomi
+          foreignField: "_id", // Product modelidagi field nomi
+          as: "productDetails", // Keladigan ma'lumot nomi
+        },
+      },
+      // 2. Massivni obyektga aylantiramiz
+      {
+        $unwind: { path: "$productDetails", preserveNullAndEmptyArrays: true },
+      },
       {
         $facet: {
-          salesList: [{ $sort: { createdAt: -1 } }],
+          salesList: [
+            { $sort: { createdAt: -1 } },
+            // 3. Faqat kerakli ma'lumotlarni qoldiramiz (optional)
+            {
+              $project: {
+                _id: 1,
+                customerName: 1,
+                customerPhone: 1,
+                totalAmount: 1,
+                quantity: 1,
+                createdAt: 1,
+                "product.name": "$productDetails.name", // Mana nomi keldi!
+                "product.sku": "$productDetails.sku",
+                "product._id": "$productDetails._id",
+              },
+            },
+          ],
           stats: [
             {
               $group: {
@@ -220,22 +248,74 @@ router.get("/sellers/:sellerId/sales", async (req, res) => {
       count: 0,
     };
 
-    if (!sales || sales.length === 0) {
-      return res.json({
-        sales: [],
-        stats,
-        message: "Sotuvlar topilmadi",
-      });
-    }
-
-    res.json({
-      sales,
-      stats,
-    });
+    res.json({ sales, stats });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
+
+// router.get("/sellers/:sellerId/sales", async (req, res) => {
+//   try {
+//     const { sellerId } = req.params;
+//     const { date } = req.query; // Masalan: ?date=2023-10-25
+
+//     let matchStage = { seller: new mongoose.Types.ObjectId(sellerId) };
+
+//     if (date) {
+//       const startOfDay = new Date(date);
+//       startOfDay.setHours(0, 0, 0, 0);
+
+//       const endOfDay = new Date(date);
+//       endOfDay.setHours(23, 59, 59, 999);
+
+//       matchStage.createdAt = {
+//         $gte: startOfDay,
+//         $lte: endOfDay,
+//       };
+//     }
+
+//     const result = await Sale.aggregate([
+//       { $match: matchStage },
+//       {
+//         $facet: {
+//           salesList: [{ $sort: { createdAt: -1 } }],
+//           stats: [
+//             {
+//               $group: {
+//                 _id: null,
+//                 totalSalesAmount: { $sum: "$totalAmount" },
+//                 totalQuantity: { $sum: "$quantity" },
+//                 count: { $sum: 1 },
+//               },
+//             },
+//           ],
+//         },
+//       },
+//     ]);
+
+//     const sales = result[0].salesList;
+//     const stats = result[0].stats[0] || {
+//       totalSalesAmount: 0,
+//       totalQuantity: 0,
+//       count: 0,
+//     };
+
+//     if (!sales || sales.length === 0) {
+//       return res.json({
+//         sales: [],
+//         stats,
+//         message: "Sotuvlar topilmadi",
+//       });
+//     }
+
+//     res.json({
+//       sales,
+//       stats,
+//     });
+//   } catch (error) {
+//     res.status(500).json({ error: error.message });
+//   }
+// });
 
 // Get stocks for a specific product
 router.get("/products/:productId/stocks", async (req, res) => {
