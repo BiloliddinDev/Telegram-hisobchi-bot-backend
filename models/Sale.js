@@ -19,6 +19,34 @@ const saleSchema = new mongoose.Schema(
       required: true,
       min: 1,
     },
+    customer: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Customer",
+      default: null,
+      index: true,
+    },
+
+    paidAmount: {
+      type: Number,
+      default: 0,
+    },
+    debt: {
+      type: Number,
+      default: 0,
+    },
+    isDebt: {
+      type: Boolean,
+      default: false,
+    },
+    dueDate: {
+      type: Date,
+      default: null,
+    },
+    orderId: {
+      type: String,
+      default: null,
+      index: true,
+    },
     price: {
       type: Number,
       required: true,
@@ -44,17 +72,30 @@ const saleSchema = new mongoose.Schema(
     timestamp: {
       type: Date,
       default: Date.now,
-      index: true, // for sorting by timestamp
+      index: true,
     },
     createdAt: {
       type: Date,
       default: Date.now,
-      index: true, // for sorting by creation date
+      index: true,
+    },
+    discount: {
+      type: Number,
+      default: 0,
+    },
+    discountPercent: {
+      type: Number,
+      default: 0,
+    },
+    status: {
+      type: String,
+      enum: ["paid", "partial", "debt"],
+      default: "paid",
     },
   },
   {
     timestamps: true,
-  }
+  },
 );
 
 saleSchema.index({ seller: 1, product: 1 });

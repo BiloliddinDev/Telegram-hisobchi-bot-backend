@@ -8,7 +8,6 @@ const SellerProduct = require("../models/SellerProduct");
 const { authenticate, isSeller } = require("../middleware/auth");
 const { getActiveAssignedStocksForSeller } = require("./utils");
 
-// All sellerId routes require authentication and sellerId role
 router.use(authenticate);
 router.use(isSeller);
 
@@ -40,7 +39,7 @@ router.get("/stocks", async (req, res) => {
     const totalProducts = assignedStocks.length;
     const totalQuantity = assignedStocks.reduce(
       (total, row) => total + (row.stock?.quantity || 0),
-      0
+      0,
     );
 
     res.json({
@@ -63,7 +62,7 @@ router.get("/stocks/product/:productId", async (req, res) => {
 
     const stock = await SellerStock.findBySellerAndProduct(
       req.user._id,
-      productId
+      productId,
     );
 
     if (!stock) {
@@ -87,12 +86,9 @@ router.get("/sales", async (req, res) => {
     const query = { seller: req.user._id };
 
     if (start && end) {
-      const startDate = new Date(`${start}T00:00:00.000Z`);
-      const endDate = new Date(`${end}T23:59:59.999Z`);
-
       query.timestamp = {
-        $gte: startDate,
-        $lte: endDate,
+        $gte: new Date(`${start}T00:00:00.000Z`),
+        $lte: new Date(`${end}T23:59:59.999Z`),
       };
     }
 
@@ -100,9 +96,48 @@ router.get("/sales", async (req, res) => {
       .populate("product", "name price image")
       .sort({ timestamp: -1 });
 
-    res.json({ sales });
+    const groupsMap = {};
+
+    for (const sale of sales) {
+      const key = sale.orderId || sale._id.toString();
+
+      if (!groupsMap[key]) {
+        groupsMap[key] = {
+          orderId: key,
+          customerName: sale.customerName,
+          customerPhone: sale.customerPhone,
+          notes: sale.notes,
+          timestamp: sale.timestamp,
+          items: [],
+          totalAmount: 0,
+          discount: 0,
+          discountPercent: 0,
+          debt: 0,
+          paidAmount: 0,
+        };
+      }
+
+      groupsMap[key].items.push({
+        _id: sale._id,
+        product: sale.product,
+        quantity: sale.quantity,
+        price: sale.price,
+        totalAmount: sale.totalAmount,
+      });
+
+      groupsMap[key].totalAmount += sale.totalAmount;
+      groupsMap[key].debt += sale.debt || 0;
+      groupsMap[key].paidAmount += sale.paidAmount || 0;
+      groupsMap[key].discount += sale.discount || 0;
+      groupsMap[key].discountPercent = sale.discountPercent || 0;
+    }
+
+    const groupedSales = Object.values(groupsMap).sort(
+      (a, b) => new Date(b.timestamp) - new Date(a.timestamp),
+    );
+
+    res.json({ sales: groupedSales });
   } catch (error) {
-    console.error("Sales Error:", error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -114,7 +149,7 @@ router.get("/reports", async (req, res) => {
     const startDate = new Date(
       year || new Date().getFullYear(),
       (month || new Date().getMonth()) - 1,
-      1
+      1,
     );
     const endDate = new Date(
       year || new Date().getFullYear(),
@@ -122,7 +157,7 @@ router.get("/reports", async (req, res) => {
       0,
       23,
       59,
-      59
+      59,
     );
 
     const sales = await Sale.find({
