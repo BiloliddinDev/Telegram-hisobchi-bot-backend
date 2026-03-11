@@ -48,6 +48,7 @@ app.use("/api/analytics", require("./routes/analytics"));
 app.use("/api/transfers", require("./routes/transfers"));
 app.use("/api/export", require("./routes/export"));
 app.use("/api/payments", require("./routes/payments"));
+app.use("/api/customers", require("./routes/customers"));
 app.get("/api/health", (req, res) => res.json({ status: "OK" }));
 
 // Swagger Documentation

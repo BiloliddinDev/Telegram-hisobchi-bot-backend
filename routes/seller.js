@@ -1,17 +1,17 @@
 const express = require("express");
 const router = express.Router();
-const User = require("../models/User");
-const Product = require("../models/Product");
 const Sale = require("../models/Sale");
 const SellerStock = require("../models/SellerStock");
 const SellerProduct = require("../models/SellerProduct");
 const { authenticate, isSeller } = require("../middleware/auth");
 const { getActiveAssignedStocksForSeller } = require("./utils");
+const Customer = require("../models/Customer");
+const SaleService = require("../utils/saleService");
 
 router.use(authenticate);
 router.use(isSeller);
 
-// Get sellerId's assigned products
+// 1. Assigned products
 router.get("/products", async (req, res) => {
   try {
     const products = await SellerProduct.find({
@@ -20,33 +20,32 @@ router.get("/products", async (req, res) => {
     })
       .populate("product")
       .select("product assignAt");
-    res.json({ products: products });
+    res.json({ products });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Get seller's stock inventory (ACTIVE ASSIGNMENTS ONLY)
+// 2. Seller stock inventory
 router.get("/stocks", async (req, res) => {
   try {
     const assignedStocks = await getActiveAssignedStocksForSeller(req.user._id);
 
-    // Calculate total stock value
-    const totalStockValue = assignedStocks.reduce((total, row) => {
+    const sorted = assignedStocks.sort((a, b) => {
+      if (a.stock?.quantity === 0 && b.stock?.quantity > 0) return 1;
+      if (a.stock?.quantity > 0 && b.stock?.quantity === 0) return -1;
+      return 0;
+    });
+
+    const totalStockValue = sorted.reduce((total, row) => {
       return total + (row.stock?.quantity || 0) * (row.product?.costPrice || 0);
     }, 0);
 
-    const totalProducts = assignedStocks.length;
-    const totalQuantity = assignedStocks.reduce(
-      (total, row) => total + (row.stock?.quantity || 0),
-      0,
-    );
-
     res.json({
-      sellerStocks: assignedStocks,
+      sellerStocks: sorted,
       summary: {
-        totalProducts,
-        totalQuantity,
+        totalProducts: sorted.length,
+        totalQuantity: sorted.reduce((t, r) => t + (r.stock?.quantity || 0), 0),
         totalStockValue,
       },
     });
@@ -55,7 +54,7 @@ router.get("/stocks", async (req, res) => {
   }
 });
 
-// Get stock for a specific product
+// 3. Specific product stock
 router.get("/stocks/product/:productId", async (req, res) => {
   try {
     const { productId } = req.params;
@@ -72,14 +71,13 @@ router.get("/stocks/product/:productId", async (req, res) => {
     }
 
     await stock.populate("product", "name sku price costPrice image");
-
     res.json({ stock });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Get sellerId's sales
+// 4. Seller sales (guruhlangan)
 router.get("/sales", async (req, res) => {
   try {
     const { start, end } = req.query;
@@ -109,11 +107,13 @@ router.get("/sales", async (req, res) => {
           notes: sale.notes,
           timestamp: sale.timestamp,
           items: [],
-          totalAmount: 0,
-          discount: 0,
+          totalAmount: 0, // chegirma ayirilgan
+          rawTotal: 0, // chegirmasiz ← yangi
           discountPercent: 0,
           debt: 0,
           paidAmount: 0,
+          status: sale.status,
+          dueDate: sale.dueDate,
         };
       }
 
@@ -125,10 +125,27 @@ router.get("/sales", async (req, res) => {
         totalAmount: sale.totalAmount,
       });
 
-      groupsMap[key].totalAmount += sale.totalAmount;
-      groupsMap[key].debt += sale.debt || 0;
-      groupsMap[key].paidAmount += sale.paidAmount || 0;
-      groupsMap[key].discount += sale.discount || 0;
+      // Cent bilan yig'ish
+      groupsMap[key].totalAmount = SaleService.toDollar(
+        SaleService.toCents(groupsMap[key].totalAmount) +
+          SaleService.toCents(sale.totalAmount),
+      );
+      groupsMap[key].debt = SaleService.toDollar(
+        SaleService.toCents(groupsMap[key].debt) +
+          SaleService.toCents(sale.debt || 0),
+      );
+      groupsMap[key].paidAmount = SaleService.toDollar(
+        SaleService.toCents(groupsMap[key].paidAmount) +
+          SaleService.toCents(sale.paidAmount || 0),
+      );
+
+      // rawTotal — chegirmasiz (price * quantity)
+      groupsMap[key].rawTotal = SaleService.toDollar(
+        SaleService.toCents(groupsMap[key].rawTotal) +
+          SaleService.toCents(sale.price * sale.quantity),
+      );
+
+      // discountPercent — faqat bitta qiymat
       groupsMap[key].discountPercent = sale.discountPercent || 0;
     }
 
@@ -142,7 +159,7 @@ router.get("/sales", async (req, res) => {
   }
 });
 
-// Get sellerId's reports
+// 5. Seller reports
 router.get("/reports", async (req, res) => {
   try {
     const { year, month } = req.query;
@@ -167,18 +184,47 @@ router.get("/reports", async (req, res) => {
       .populate("product", "name price")
       .sort({ timestamp: -1 });
 
-    const totalSales = sales.length;
-    const totalRevenue = sales.reduce((sum, sale) => sum + sale.totalAmount, 0);
+    const totalRevenueCents = sales.reduce(
+      (sum, sale) => sum + SaleService.toCents(sale.totalAmount),
+      0,
+    );
+    const totalDebtCents = sales.reduce(
+      (sum, sale) => sum + SaleService.toCents(sale.debt || 0),
+      0,
+    );
     const totalQuantity = sales.reduce((sum, sale) => sum + sale.quantity, 0);
 
     res.json({
       period: { startDate, endDate },
       summary: {
-        totalSales,
-        totalRevenue,
+        totalSales: sales.length,
+        totalRevenue: SaleService.toDollar(totalRevenueCents),
+        totalDebt: SaleService.toDollar(totalDebtCents),
         totalQuantity,
       },
       sales,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 6. Customers (qarzdorlar)
+router.get("/customers", async (req, res) => {
+  try {
+    const customers = await Customer.find({
+      seller: req.user._id,
+      totalDebt: { $gt: 0 },
+    }).sort({ totalDebt: -1 });
+
+    const totalDebtCents = customers.reduce(
+      (sum, c) => sum + SaleService.toCents(c.totalDebt),
+      0,
+    );
+
+    res.json({
+      customers,
+      totalDebt: SaleService.toDollar(totalDebtCents),
     });
   } catch (error) {
     res.status(500).json({ error: error.message });

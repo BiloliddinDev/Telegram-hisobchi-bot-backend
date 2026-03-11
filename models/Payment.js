@@ -5,7 +5,7 @@ const paymentSchema = new mongoose.Schema(
     sale: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Sale",
-      required: true,
+      required: false,
       index: true,
     },
     seller: {
