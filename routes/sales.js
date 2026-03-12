@@ -107,7 +107,9 @@ router.post("/batch", async (req, res) => {
         const sellerStock = await SellerStock.findOne({
           seller: req.user._id,
           product: productId,
-        }).session(session);
+        })
+          .session(session)
+          .populate("product", "costPrice");
 
         if (!sellerStock || sellerStock.quantity < quantity) {
           throw new Error(`Mahsulot yetarli emas: ${productId}`);
@@ -121,6 +123,7 @@ router.post("/batch", async (req, res) => {
               product: productId,
               quantity,
               price,
+              costPrice: sellerStock.product?.costPrice || 0,
               customer: customerId || null,
               totalAmount: itemNet,
               paidAmount: itemPaid,

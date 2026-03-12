@@ -1,78 +1,99 @@
+const SaleService = require("../utils/saleService");
+const Customer = require("../models/Customer");
+
 class ReportDTO {
-  // product:
-  //    totalProducts: total products in all warehouses
-  //    totalProductQuantity: total quantity of all products in all warehouses
-  //    totalProductCostPrice: total cost price of all products in all warehouses
-  // sellerStocks:
-  //    totalSellerStocks: total stocks of all sellers in all warehouses
-  //    totalSellerStockQuantity: total quantity of all stocks of all sellers in all warehouses
-  //    totalSellerStockCostPrice: total cost price of all stocks of all sellers in all warehouses
-  // sales:
-  //    totalSales: total sales in all warehouses
-  //    totalRevenue: total revenue in all warehouses
-  //    totalSalesQuantity: total quantity of all sales in all warehouses
-  constructor(sales, products = [], sellerStocks = [], startDate, endDate) {
-    this.period = {
-      startDate,
-      endDate,
-    };
+  constructor(
+    sales,
+    products = [],
+    sellerStocks = [],
+    startDate,
+    endDate,
+    debts = {},
+  ) {
+    this.period = { startDate, endDate };
     this.summary = this._calculateSummary(sales, products, sellerStocks);
-    // this.salesBySeller = this._groupSalesBySeller(sales);
-    // this.salesByProduct = this._groupSalesByProduct(sales);
-    // this.topPerformers = this._getTopPerformers(sales);
-    // this.dailySales = this._getDailySales(sales, startDate, endDate);
+    this.debts = debts;
   }
 
   _calculateSummary(sales, products, sellerStocks) {
     // 1. Asosiy Ombor statistikasi
     const totalProducts = products.length;
     const totalProductQuantity = products.reduce(
-      (sum, product) => sum + (product.warehouseQuantity || 0),
-      0
+      (sum, p) => sum + (p.warehouseQuantity || 0),
+      0,
     );
     const totalProductCostPrice = products.reduce(
-      (sum, product) =>
-        sum + (product.warehouseQuantity || 0) * (product.costPrice || 0),
-      0
+      (sum, p) => sum + (p.warehouseQuantity || 0) * (p.costPrice || 0),
+      0,
     );
 
     // 2. Sotuvchilardagi qoldiq statistikasi
     const totalSellerStocks = sellerStocks.length;
     const totalSellerStockQuantity = sellerStocks.reduce(
-      (sum, stock) => sum + (stock.stock?.quantity || 0),
-      0
+      (sum, s) => sum + (s.stock?.quantity || 0),
+      0,
     );
     const totalSellerStockCostPrice = sellerStocks.reduce(
-      (sum, stock) =>
-        sum + (stock.stock?.quantity || 0) * (stock.product?.costPrice || 0),
-      0
+      (sum, s) => sum + (s.stock?.quantity || 0) * (s.product?.costPrice || 0),
+      0,
     );
 
-    // 3. Savdo va FOYDA statistikasi
+    // 3. Savdo statistikasi — CENT bilan
     const totalSales = sales.length;
-    const totalRevenue = sales.reduce(
-      (sum, sale) => sum + (sale.totalAmount || 0),
-      0
-    );
     const totalSalesQuantity = sales.reduce(
       (sum, sale) => sum + (sale.quantity || 0),
-      0
+      0,
     );
 
-    // --- FOYDA HISOB-KITOBI ---
-    // Har bir sotuvdan (sotilgan dona * tannarx) ni hisoblaymiz
-    const totalSoldCostPrice = sales.reduce((sum, sale) => {
-      // product obyekti populate qilingan bo'lishi shart
-      const costPrice = sale.product?.costPrice || 0;
-      return sum + (sale.quantity || 0) * costPrice;
+    // Jami sotuv (qarz + naqd)
+    const totalRevenueCents = sales.reduce(
+      (sum, sale) => sum + SaleService.toCents(sale.totalAmount || 0),
+      0,
+    );
+
+    // Naqd tushum (qo'lda bor pul)
+    const totalPaidCents = sales.reduce(
+      (sum, sale) => sum + SaleService.toCents(sale.paidAmount || 0),
+      0,
+    );
+
+    // Qarzlar (hali olinmagan)
+    const totalDebtCents = sales.reduce(
+      (sum, sale) => sum + SaleService.toCents(sale.debt || 0),
+      0,
+    );
+
+    // ✅ Tan narx — faqat sale.costPrice > 0 bo'lsa
+    // Eski sotuvlarda costPrice yo'q → 0 qilib hisoblaymiz (xato chiqmaydi)
+    const totalSoldCostCents = sales.reduce((sum, sale) => {
+      const costPrice = sale.costPrice > 0 ? sale.costPrice : 0;
+      return sum + SaleService.toCents((sale.quantity || 0) * costPrice);
     }, 0);
 
-    const totalProfit = totalRevenue - totalSoldCostPrice;
-    // ---------------------------
+    // Sof foyda = Naqd tushum - Tan narx
+    const totalProfitCents = totalPaidCents - totalSoldCostCents;
 
     const uniqueSellers = new Set(
-      sales.map((sale) => sale.seller?._id?.toString()).filter(Boolean)
+      sales.map((s) => s.seller?._id?.toString()).filter(Boolean),
     );
+    const uniqueProducts = new Set(
+      sales.map((s) => s.product?._id?.toString()).filter(Boolean),
+    );
+
+    const totalRevenue = SaleService.toDollar(totalRevenueCents);
+    const totalPaid = SaleService.toDollar(totalPaidCents);
+    const totalDebt = SaleService.toDollar(totalDebtCents);
+    const totalProfit = SaleService.toDollar(totalProfitCents);
+
+    const averageSaleAmount =
+      totalSales > 0
+        ? SaleService.toDollar(Math.round(totalRevenueCents / totalSales))
+        : 0;
+
+    const debtRatio =
+      totalRevenueCents > 0
+        ? ((totalDebtCents / totalRevenueCents) * 100).toFixed(2) + "%"
+        : "0%";
 
     return {
       products: {
@@ -88,189 +109,79 @@ class ReportDTO {
       sales: {
         totalSales,
         totalRevenue,
-        totalProfit, // Frontendga boradigan yangi maydon
+        totalPaid,
+        totalDebt,
+        totalProfit,
+        debtRatio,
         totalSalesQuantity,
         totalSellers: uniqueSellers.size,
-        averageSaleAmount: totalSales > 0 ? totalRevenue / totalSales : 0,
+        totalProductsSold: uniqueProducts.size,
+        averageSaleAmount,
       },
     };
   }
 
-  _groupSalesBySeller(sales) {
-    const salesBySeller = {};
+  static async create(sales, products, sellerStocks, startDate, endDate) {
+    const customers = await Customer.find({ totalDebt: { $gt: 0 } })
+      .populate("seller", "username firstName lastName")
+      .sort({ totalDebt: -1 });
 
-    sales.forEach((sale) => {
-      if (!sale.sellerId?._id) return;
+    const sellerDebtsMap = {};
+    for (const customer of customers) {
+      const sellerId = customer.seller?._id?.toString();
+      if (!sellerId) continue;
 
-      const sellerId = sale.sellerId._id.toString();
-      if (!salesBySeller[sellerId]) {
-        salesBySeller[sellerId] = {
-          seller: {
-            id: sale.sellerId._id,
-            username: sale.sellerId.username,
-            firstName: sale.sellerId.firstName,
-            lastName: sale.sellerId.lastName,
-            fullName: `${sale.sellerId.firstName || ""} ${
-              sale.sellerId.lastName || ""
-            }`.trim(),
-          },
-          stats: {
-            totalSales: 0,
-            totalRevenue: 0,
-            totalQuantity: 0,
-            averageSaleAmount: 0,
-          },
+      if (!sellerDebtsMap[sellerId]) {
+        sellerDebtsMap[sellerId] = {
+          seller: customer.seller,
+          totalDebt: 0,
+          customersCount: 0,
+          customers: [],
         };
       }
 
-      salesBySeller[sellerId].stats.totalSales += 1;
-      salesBySeller[sellerId].stats.totalRevenue += sale.totalAmount || 0;
-      salesBySeller[sellerId].stats.totalQuantity += sale.quantity || 0;
-    });
-
-    // Calculate averages and format currency
-    Object.values(salesBySeller).forEach((sellerData) => {
-      const stats = sellerData.stats;
-      stats.averageSaleAmount =
-        stats.totalSales > 0 ? stats.totalRevenue / stats.totalSales : 0;
-    });
-
-    return Object.values(salesBySeller).sort(
-      (a, b) => b.stats.totalRevenue - a.stats.totalRevenue
-    );
-  }
-
-  _groupSalesByProduct(sales) {
-    const salesByProduct = {};
-
-    sales.forEach((sale) => {
-      if (!sale.productId?._id) return;
-
-      const productId = sale.productId._id.toString();
-      if (!salesByProduct[productId]) {
-        salesByProduct[productId] = {
-          product: {
-            id: sale.productId._id,
-            name: sale.productId.name,
-            price: sale.productId.price || 0,
-          },
-          stats: {
-            totalSales: 0,
-            totalRevenue: 0,
-            totalQuantity: 0,
-            averageSaleAmount: 0,
-          },
-        };
-      }
-
-      salesByProduct[productId].stats.totalSales += 1;
-      salesByProduct[productId].stats.totalRevenue += sale.totalAmount || 0;
-      salesByProduct[productId].stats.totalQuantity += sale.quantity || 0;
-    });
-
-    // Calculate averages and format currency
-    Object.values(salesByProduct).forEach((productData) => {
-      const stats = productData.stats;
-      stats.averageSaleAmount =
-        stats.totalSales > 0 ? stats.totalRevenue / stats.totalSales : 0;
-    });
-
-    return Object.values(salesByProduct).sort(
-      (a, b) => b.stats.totalRevenue - a.stats.totalRevenue
-    );
-  }
-
-  _getTopPerformers(sales) {
-    const sellerStats = {};
-    const productStats = {};
-
-    sales.forEach((sale) => {
-      // Top sellers by revenue
-      if (sale.sellerId?._id) {
-        const sellerId = sale.sellerId._id.toString();
-        if (!sellerStats[sellerId]) {
-          sellerStats[sellerId] = {
-            seller: sale.sellerId,
-            totalRevenue: 0,
-            totalSales: 0,
-          };
-        }
-        sellerStats[sellerId].totalRevenue += sale.totalAmount || 0;
-        sellerStats[sellerId].totalSales += 1;
-      }
-
-      // Top products by quantity
-      if (sale.productId?._id) {
-        const productId = sale.productId._id.toString();
-        if (!productStats[productId]) {
-          productStats[productId] = {
-            product: sale.productId,
-            totalQuantity: 0,
-            totalSales: 0,
-          };
-        }
-        productStats[productId].totalQuantity += sale.quantity || 0;
-        productStats[productId].totalSales += 1;
-      }
-    });
-
-    return {
-      topSellerByRevenue:
-        Object.values(sellerStats).sort(
-          (a, b) => b.totalRevenue - a.totalRevenue
-        )[0] || null,
-      topProductByQuantity:
-        Object.values(productStats).sort(
-          (a, b) => b.totalQuantity - a.totalQuantity
-        )[0] || null,
-    };
-  }
-
-  _getDailySales(sales, startDate, endDate) {
-    const dailySales = {};
-    const currentDate = new Date(startDate);
-
-    // Initialize all days in the period
-    while (currentDate <= endDate) {
-      const dateKey = currentDate.toISOString().split("T")[0];
-      dailySales[dateKey] = {
-        date: dateKey,
-        totalSales: 0,
-        totalRevenue: 0,
-        totalQuantity: 0,
-      };
-      currentDate.setDate(currentDate.getDate() + 1);
+      sellerDebtsMap[sellerId].totalDebt = SaleService.toDollar(
+        SaleService.toCents(sellerDebtsMap[sellerId].totalDebt) +
+          SaleService.toCents(customer.totalDebt),
+      );
+      sellerDebtsMap[sellerId].customersCount += 1;
+      sellerDebtsMap[sellerId].customers.push({
+        _id: customer._id,
+        name: customer.name,
+        phone: customer.phone,
+        totalDebt: customer.totalDebt,
+        lastPurchase: customer.lastPurchase,
+      });
     }
 
-    // Populate with actual sales data
-    sales.forEach((sale) => {
-      const saleDate = new Date(sale.timestamp).toISOString().split("T")[0];
-      if (dailySales[saleDate]) {
-        dailySales[saleDate].totalSales += 1;
-        dailySales[saleDate].totalRevenue += sale.totalAmount || 0;
-        dailySales[saleDate].totalQuantity += sale.quantity || 0;
-      }
-    });
+    const grandTotalDebtCents = customers.reduce(
+      (sum, c) => sum + SaleService.toCents(c.totalDebt),
+      0,
+    );
 
-    return Object.values(dailySales).sort((a, b) =>
-      a.date.localeCompare(b.date)
+    const debts = {
+      grandTotalDebt: SaleService.toDollar(grandTotalDebtCents),
+      totalDebtors: customers.length,
+      sellerDebts: Object.values(sellerDebtsMap).sort(
+        (a, b) => b.totalDebt - a.totalDebt,
+      ),
+    };
+
+    return new ReportDTO(
+      sales,
+      products,
+      sellerStocks,
+      startDate,
+      endDate,
+      debts,
     );
   }
 
-  // Static method to create DTO from sales data with products and seller stocks
-  static async create(sales, products, sellerStocks, startDate, endDate) {
-    return new ReportDTO(sales, products, sellerStocks, startDate, endDate);
-  }
-
-  // Method to get a simplified version for API response
   toJSON() {
     return {
       period: this.period,
       summary: this.summary,
-      // salesBySeller: this.salesBySeller,
-      // salesByProduct: this.salesB?yProduct,
-      // topPerformers: this.topPerformers,
-      // dailySales: this.dailySales,
+      debts: this.debts,
     };
   }
 }
