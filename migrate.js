@@ -1,33 +1,47 @@
+require("dotenv").config({ path: __dirname + "/.env" });
 const mongoose = require("mongoose");
 const Sale = require("./models/Sale");
 const Customer = require("./models/Customer");
 
-// 1. MONGO_URI ni o'zgartiring (masalan: .env dagi linkni qo'ying)
-const MONGO_URI = "mongodb://127.0.0.1:27017/Sening_Baza_Noming";
+const MONGO_URI =
+  "mongodb+srv://bilol09876_db_user:wNaPpcj2DQjpUSk3@cluster0.puw13ji.mongodb.net/?appName=Cluster0";
 
 async function migrateOldSales() {
   try {
-    await mongoose.connect(MONGO_URI);
+    await mongoose.connect(MONGO_URI, {
+      serverSelectionTimeoutMS: 10000,
+      socketTimeoutMS: 45000,
+    });
     console.log("🚀 MongoDB-ga ulanish muvaffaqiyatli!");
     console.log("🛠 Migratsiya boshlandi...");
 
-    // 2. Faqat orderId-si bo'lmagan yoki customer ulanmagan sotuvlarni topamiz
+    // 1. Faqat orderId-si yo'q yoki customer ulanmagan sotuvlar
     const sales = await Sale.find({
-      $or: [{ orderId: { $exists: false } }, { customer: { $exists: false } }],
+      $or: [
+        { orderId: { $exists: false } },
+        { orderId: null },
+        { customer: { $exists: false } },
+        { customer: null },
+      ],
     }).sort({ createdAt: 1 });
 
     console.log(`📦 ${sales.length} ta eski sotuv topildi.`);
 
     if (sales.length === 0) {
       console.log("✅ Migratsiya qilinadigan ma'lumot qolmadi.");
-      process.exit();
+      await mongoose.disconnect();
+      process.exit(0);
     }
 
+    let updated = 0;
+    let created = 0;
+
     for (let sale of sales) {
-      // 3. Ma'lumotlarni tozalash (Normalizatsiya)
-      // Agar telefon yoki ism bo'lmasa, bitta "NOMALUM" profiliga yig'amiz
+      // 2. Telefon va ism normalizatsiya
       let searchPhone =
-        sale.customerPhone && sale.customerPhone.trim() !== ""
+        sale.customerPhone &&
+        sale.customerPhone.trim() !== "" &&
+        sale.customerPhone.trim() !== "+998"
           ? sale.customerPhone.trim()
           : "NOMALUM";
 
@@ -36,13 +50,13 @@ async function migrateOldSales() {
           ? sale.customerName.trim()
           : "Noma'lum Mijoz";
 
-      // 4. Mijozni qidirish (Avval mavjudmi tekshiramiz)
+      // 3. Mijozni qidirish
       let customer = await Customer.findOne({
         seller: sale.seller,
         phone: searchPhone,
       });
 
-      // 5. Agar topilmasa, yangi yaratamiz
+      // 4. Topilmasa yaratish
       if (!customer) {
         [customer] = await Customer.create([
           {
@@ -52,40 +66,49 @@ async function migrateOldSales() {
             totalDebt: 0,
           },
         ]);
-        console.log(`👤 Yangi profil ochildi: ${searchName} (${searchPhone})`);
+        created++;
+        console.log(`👤 Yangi profil: ${searchName} (${searchPhone})`);
       }
 
-      // 6. Savat ID (OrderId) yaratish
-      // Vaqti bir xil bo'lganlarni (minutigacha) bitta ID ga solamiz
+      // 5. OrderId yaratish
       const dateObj = new Date(sale.createdAt || sale.timestamp);
       const timeKey = dateObj.toISOString().substring(0, 16);
       const orderId = `OLD-ORD-${searchPhone}-${timeKey.replace(/[:T-]/g, "")}`;
 
-      // 7. Sotuvni yangi tizimga bog'lash
+      // 6. Sotuvni yangilash
       await Sale.findByIdAndUpdate(sale._id, {
         customer: customer._id,
         orderId: orderId,
-        customerName: searchName, // Eskisini yangilangan bilan to'g'rilab qo'yamiz
+        customerName: searchName,
         customerPhone: searchPhone,
       });
+
+      updated++;
     }
 
-    // 8. QAYTA HISOBLASH: Har bir mijozning qarzini Sale jadvalidan to'g'irlab chiqish
+    console.log(
+      `✅ ${updated} ta sotuv yangilandi, ${created} ta yangi mijoz yaratildi.`,
+    );
+
+    // 7. Mijozlar qarzini qayta hisoblash
     console.log("🔢 Mijozlar balansi qayta hisoblanmoqda...");
     const allCustomers = await Customer.find({});
 
     for (let cust of allCustomers) {
-      const stats = await Sale.aggregate([
-        { $match: { customer: cust._id, isDebt: true } },
-        { $group: { _id: null, totalDebt: { $sum: "$debtAmount" } } },
-      ]);
+      // debt field dan hisoblaymiz (debtAmount emas)
+      const debtSales = await Sale.find({
+        customer: cust._id,
+        debt: { $gt: 0 },
+      });
 
-      const actualDebt = stats.length > 0 ? stats[0].totalDebt : 0;
+      const actualDebt = debtSales.reduce((sum, s) => sum + (s.debt || 0), 0);
+      const roundedDebt = Number(actualDebt.toFixed(2));
 
-      // Faqat o'zgargan bo'lsa saqlaymiz
-      if (cust.totalDebt !== actualDebt) {
-        cust.totalDebt = actualDebt;
-        await cust.save();
+      if (cust.totalDebt !== roundedDebt) {
+        await Customer.findByIdAndUpdate(cust._id, {
+          totalDebt: roundedDebt,
+        });
+        console.log(`💰 ${cust.name}: qarz ${cust.totalDebt} → ${roundedDebt}`);
       }
     }
 
@@ -95,7 +118,7 @@ async function migrateOldSales() {
   } finally {
     await mongoose.disconnect();
     console.log("👋 Baza bilan aloqa uzildi.");
-    process.exit();
+    process.exit(0);
   }
 }
 
