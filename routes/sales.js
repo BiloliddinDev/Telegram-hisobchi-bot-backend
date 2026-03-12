@@ -1,99 +1,184 @@
 const express = require("express");
 const router = express.Router();
-const Sale = require("../models/Sale");
-const Product = require("../models/Product");
-const SellerStock = require("../models/SellerStock");
-const { authenticate, isSeller } = require("../middleware/auth");
-const { validateSale } = require("../middleware/validation");
-const SellerProduct = require("../models/SellerProduct");
 const mongoose = require("mongoose");
+const Sale = require("../models/Sale");
+const SellerStock = require("../models/SellerStock");
+const Customer = require("../models/Customer");
+const { authenticate, isSeller } = require("../middleware/auth");
+const SaleService = require("../utils/saleService");
 
-// All admin routes require authentication and admin role
 router.use(authenticate);
 router.use(isSeller);
 
-// Create sale
-router.post("/", validateSale, async (req, res) => {
+router.post("/batch", async (req, res) => {
   const session = await mongoose.startSession();
+
   try {
-    const { productId, quantity, price, customerName, customerPhone, notes } =
-      req.body;
+    const {
+      orderId,
+      items,
+      customerName,
+      customerPhone,
+      notes,
+      paidAmount,
+      discountPercent,
+      discount,
+      dueDate,
+    } = req.body;
 
-    const product = await Product.findById(productId);
-    if (!product) {
-      return res.status(404).json({ error: "Product not found" });
-    }
-
-    // Check if seller has access to this productId
-    const sellerProductExists = await SellerProduct.findBySellerAndProduct(
-      req.user._id,
-      productId,
-    );
-    if (!sellerProductExists) {
+    // Validatsiya
+    if (!items || !Array.isArray(items) || items.length === 0) {
       return res
-        .status(403)
-        .json({ error: "You do not have access to this productId" });
+        .status(400)
+        .json({ error: "Kamida bitta mahsulot bo'lishi kerak" });
+    }
+    if (!orderId) {
+      return res.status(400).json({ error: "OrderId majburiy" });
     }
 
-    // Check count
-    const sellerStock = await SellerStock.findBySellerAndProduct(
-      req.user._id,
-      productId,
-    );
-    if (!sellerStock || sellerStock.quantity < quantity) {
-      return res.status(400).json({ error: "Sizda yetarli mahsulot yo'q" });
-    }
+    // 1. Service orqali hisob-kitob
+    const { rawTotal, discountAmount, netTotal } = SaleService.calculateTotals({
+      items,
+      discountPercent,
+    });
 
-    const totalAmount = price * quantity;
+    const paid =
+      paidAmount !== undefined && paidAmount !== null
+        ? SaleService.toDollar(SaleService.toCents(paidAmount)) // normalize
+        : netTotal;
 
+    const { debt, status } = SaleService.calculateStatus({
+      netTotal,
+      paidAmount: paid,
+    });
+
+    const distributedItems = SaleService.distributePayment({
+      items,
+      discountPercent,
+      paid,
+      rawTotal,
+    });
+
+    // 2. Tranzaksiya
     await session.withTransaction(async () => {
-      await Sale.create(
-        [
-          {
-            seller: req.user._id,
-            product: productId,
-            quantity,
-            price,
-            totalAmount,
-            customerName,
-            customerPhone,
-            notes,
-          },
-        ],
-        { session },
-      );
+      // Mijozni topish yoki yaratish
+      let customerId = null;
+      if (customerPhone) {
+        let customer = await Customer.findOne({
+          phone: customerPhone,
+          seller: req.user._id,
+        }).session(session);
 
-      const isDecreased = await SellerStock.decreaseQuantity({
-        stockId: sellerStock._id,
-        amount: Math.abs(quantity),
-        session: session,
-      });
+        if (!customer) {
+          [customer] = await Customer.create(
+            [
+              {
+                seller: req.user._id,
+                name: customerName || "Noma'lum",
+                phone: customerPhone,
+                totalDebt: 0,
+              },
+            ],
+            { session },
+          );
+        }
 
-      if (!isDecreased) {
-        throw new Error("Sizda yetarli mahsulot yo'q");
+        customerId = customer._id;
+
+        // Mijoz qarzini yangilash
+        if (debt > 0) {
+          await Customer.findByIdAndUpdate(
+            customerId,
+            {
+              $inc: { totalDebt: debt },
+              $set: { lastPurchase: new Date() },
+            },
+            { session },
+          );
+        }
+      }
+
+      // Har bir item uchun
+      for (const item of distributedItems) {
+        const { productId, quantity, price, itemNet, itemPaid, itemDebt } =
+          item;
+
+        // Omborni tekshirish
+        const sellerStock = await SellerStock.findOne({
+          seller: req.user._id,
+          product: productId,
+        })
+          .session(session)
+          .populate("product", "costPrice");
+
+        if (!sellerStock || sellerStock.quantity < quantity) {
+          throw new Error(`Mahsulot yetarli emas: ${productId}`);
+        }
+
+        // Sale yaratish
+        await Sale.create(
+          [
+            {
+              seller: req.user._id,
+              product: productId,
+              quantity,
+              price,
+              costPrice: sellerStock.product?.costPrice || 0,
+              customer: customerId || null,
+              totalAmount: itemNet,
+              paidAmount: itemPaid,
+              debt: itemDebt,
+              status,
+              isDebt: itemDebt > 0,
+              dueDate: dueDate || null,
+              orderId,
+              customerName: customerName || "",
+              customerPhone: customerPhone || "",
+              notes: notes || "",
+              discount: Number((discountAmount / items.length).toFixed(2)),
+              discountPercent: discountPercent || 0,
+            },
+          ],
+          { session },
+        );
+
+        // Ombordan ayirish
+        await SellerStock.updateOne(
+          { _id: sellerStock._id },
+          { $inc: { quantity: -quantity } },
+          { session },
+        );
       }
     });
 
-    res.status(201).json({ message: "Sale created successfully" });
+    // Javob
+    res.status(201).json({
+      message: "Sotuv muvaffaqiyatli yakunlandi",
+      orderId,
+      rawTotal,
+      netTotal,
+      paidAmount: paid,
+      debt,
+      status,
+    });
   } catch (error) {
+    console.error("Batch sotuv xatosi:", error);
     res.status(500).json({ error: error.message });
   } finally {
     await session.endSession();
   }
 });
 
-// Get all sales
+// --- 2. GET ALL SALES (Guruhlangan holda) ---
 router.get("/", async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
-    let query = {};
-
-    query.seller = req.user._id;
+    let query = { seller: req.user._id };
 
     if (startDate && endDate) {
       query.timestamp = {
         $gte: new Date(startDate),
-        $lte: new Date(endDate),
+        $lte: new Date(new Date(endDate).setHours(23, 59, 59, 999)),
       };
     }
 
@@ -102,27 +187,58 @@ router.get("/", async (req, res) => {
       .populate("product", "name price image")
       .sort({ timestamp: -1 });
 
-    res.json({ sales });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
+    const groupsMap = {};
+    for (const sale of sales) {
+      const key = sale.orderId || sale._id.toString();
 
-// Get single sale
-router.get("/:id", async (req, res) => {
-  try {
-    const sale = await Sale.findOne({
-      _id: req.params.id,
-      seller: req.user._id,
-    })
-      .populate("seller", "username firstName lastName")
-      .populate("product", "name price image");
+      if (!groupsMap[key]) {
+        groupsMap[key] = {
+          orderId: key,
+          customerName: sale.customerName,
+          customerPhone: sale.customerPhone,
+          notes: sale.notes,
+          seller: sale.seller,
+          timestamp: sale.timestamp,
+          items: [],
+          debt: 0,
+          paidAmount: 0,
+          totalAmount: 0,
+          discount: 0,
+          discountPercent: 0,
+        };
+      }
 
-    if (!sale) {
-      return res.status(404).json({ error: "Sale not found" });
+      groupsMap[key].items.push({
+        _id: sale._id,
+        product: sale.product,
+        quantity: sale.quantity,
+        price: sale.price,
+        totalAmount: sale.totalAmount,
+      });
+
+      groupsMap[key].debt = SaleService.toDollar(
+        SaleService.toCents(groupsMap[key].debt) +
+          SaleService.toCents(sale.debt || 0),
+      );
+      groupsMap[key].paidAmount = SaleService.toDollar(
+        SaleService.toCents(groupsMap[key].paidAmount) +
+          SaleService.toCents(sale.paidAmount),
+      );
+      groupsMap[key].totalAmount = SaleService.toDollar(
+        SaleService.toCents(groupsMap[key].totalAmount) +
+          SaleService.toCents(sale.totalAmount),
+      );
+      groupsMap[key].discount = SaleService.toDollar(
+        SaleService.toCents(groupsMap[key].discount) +
+          SaleService.toCents(sale.discount || 0),
+      );
     }
 
-    res.json({ sale });
+    const groupedSales = Object.values(groupsMap).sort(
+      (a, b) => new Date(b.timestamp) - new Date(a.timestamp),
+    );
+
+    res.json({ sales: groupedSales });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
