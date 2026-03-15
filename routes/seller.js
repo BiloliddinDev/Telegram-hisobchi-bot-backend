@@ -123,35 +123,39 @@ router.get("/sales", async (req, res) => {
         quantity: sale.quantity,
         price: sale.price,
         totalAmount: sale.totalAmount,
+        status: sale.status,
       });
 
-      // Cent bilan yig'ish
-      groupsMap[key].totalAmount = SaleService.toDollar(
-        SaleService.toCents(groupsMap[key].totalAmount) +
-          SaleService.toCents(sale.totalAmount),
-      );
-      groupsMap[key].debt = SaleService.toDollar(
-        SaleService.toCents(groupsMap[key].debt) +
-          SaleService.toCents(sale.debt || 0),
-      );
-      groupsMap[key].paidAmount = SaleService.toDollar(
-        SaleService.toCents(groupsMap[key].paidAmount) +
-          SaleService.toCents(sale.paidAmount || 0),
-      );
+      // Qaytarilgan itemlar summaga qo'shilmaydi
+      if (sale.status !== "returned") {
+        groupsMap[key].totalAmount = SaleService.toDollar(
+          SaleService.toCents(groupsMap[key].totalAmount) +
+            SaleService.toCents(sale.totalAmount),
+        );
+        groupsMap[key].debt = SaleService.toDollar(
+          SaleService.toCents(groupsMap[key].debt) +
+            SaleService.toCents(sale.debt || 0),
+        );
+        groupsMap[key].paidAmount = SaleService.toDollar(
+          SaleService.toCents(groupsMap[key].paidAmount) +
+            SaleService.toCents(sale.paidAmount || 0),
+        );
+        groupsMap[key].rawTotal = SaleService.toDollar(
+          SaleService.toCents(groupsMap[key].rawTotal) +
+            SaleService.toCents(sale.price * sale.quantity),
+        );
+      }
 
-      // rawTotal — chegirmasiz (price * quantity)
-      groupsMap[key].rawTotal = SaleService.toDollar(
-        SaleService.toCents(groupsMap[key].rawTotal) +
-          SaleService.toCents(sale.price * sale.quantity),
-      );
-
-      // discountPercent — faqat bitta qiymat
       groupsMap[key].discountPercent = sale.discountPercent || 0;
     }
 
-    const groupedSales = Object.values(groupsMap).sort(
-      (a, b) => new Date(b.timestamp) - new Date(a.timestamp),
-    );
+    const groupedSales = Object.values(groupsMap)
+      .map((group) => {
+        // Barcha itemlar qaytarilgan bo'lsa → butun order "returned"
+        const allReturned = group.items.every((i) => i.status === "returned");
+        return { ...group, status: allReturned ? "returned" : group.status };
+      })
+      .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 
     res.json({ sales: groupedSales });
   } catch (error) {
