@@ -93,7 +93,7 @@ const saleSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["paid", "partial", "debt"],
+      enum: ["paid", "partial", "debt", "returned"],
       default: "paid",
     },
   },
