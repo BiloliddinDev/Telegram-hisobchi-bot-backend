@@ -142,7 +142,7 @@ class ReportDTO {
 
       sellerDebtsMap[sellerId].totalDebt = SaleService.toDollar(
         SaleService.toCents(sellerDebtsMap[sellerId].totalDebt) +
-          SaleService.toCents(customer.totalDebt),
+        SaleService.toCents(customer.totalDebt),
       );
       sellerDebtsMap[sellerId].customersCount += 1;
       sellerDebtsMap[sellerId].customers.push({

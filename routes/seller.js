@@ -1,5 +1,6 @@
 const express = require("express");
 const router = express.Router();
+const mongoose = require("mongoose");
 const Sale = require("../models/Sale");
 const SellerStock = require("../models/SellerStock");
 const SellerProduct = require("../models/SellerProduct");
@@ -8,6 +9,8 @@ const { getActiveAssignedStocksForSeller } = require("./utils");
 const Customer = require("../models/Customer");
 const SaleService = require("../utils/saleService");
 
+const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
+
 router.use(authenticate);
 router.use(isSeller);
 
@@ -15,7 +18,7 @@ router.use(isSeller);
 router.get("/products", async (req, res) => {
   try {
     const products = await SellerProduct.find({
-      sellerId: req.user._id,
+      seller: req.user._id,
       isActive: true,
     })
       .populate("product")
@@ -37,8 +40,8 @@ router.get("/stocks", async (req, res) => {
       return 0;
     });
 
-    const totalStockValue = sorted.reduce((total, row) => {
-      return total + (row.stock?.quantity || 0) * (row.product?.costPrice || 0);
+    const totalStockValueCents = sorted.reduce((total, row) => {
+      return total + (row.stock?.quantity || 0) * SaleService.toCents(row.product?.costPrice || 0);
     }, 0);
 
     res.json({
@@ -46,7 +49,7 @@ router.get("/stocks", async (req, res) => {
       summary: {
         totalProducts: sorted.length,
         totalQuantity: sorted.reduce((t, r) => t + (r.stock?.quantity || 0), 0),
-        totalStockValue,
+        totalStockValue: SaleService.toDollar(totalStockValueCents),
       },
     });
   } catch (error) {
@@ -58,6 +61,9 @@ router.get("/stocks", async (req, res) => {
 router.get("/stocks/product/:productId", async (req, res) => {
   try {
     const { productId } = req.params;
+    if (!isValidObjectId(productId)) {
+      return res.status(400).json({ error: "Invalid product ID format" });
+    }
 
     const stock = await SellerStock.findBySellerAndProduct(
       req.user._id,
@@ -167,19 +173,25 @@ router.get("/sales", async (req, res) => {
 router.get("/reports", async (req, res) => {
   try {
     const { year, month } = req.query;
-    const startDate = new Date(
-      year || new Date().getFullYear(),
-      (month || new Date().getMonth()) - 1,
-      1,
-    );
-    const endDate = new Date(
-      year || new Date().getFullYear(),
-      month || new Date().getMonth(),
-      0,
-      23,
-      59,
-      59,
-    );
+
+    // Parse and validate year/month
+    const now = new Date();
+    const parsedYear = year ? parseInt(year) : now.getFullYear();
+    const parsedMonth = month ? parseInt(month) : now.getMonth() + 1;
+
+    if (
+      isNaN(parsedYear) ||
+      isNaN(parsedMonth) ||
+      parsedMonth < 1 ||
+      parsedMonth > 12
+    ) {
+      return res.status(400).json({
+        error: "Invalid year or month. Month must be 1-12.",
+      });
+    }
+
+    const startDate = new Date(parsedYear, parsedMonth - 1, 1, 0, 0, 0, 0);
+    const endDate = new Date(parsedYear, parsedMonth, 0, 23, 59, 59, 999);
 
     const sales = await Sale.find({
       seller: req.user._id,
@@ -188,22 +200,32 @@ router.get("/reports", async (req, res) => {
       .populate("product", "name price")
       .sort({ timestamp: -1 });
 
-    const totalRevenueCents = sales.reduce(
-      (sum, sale) => sum + SaleService.toCents(sale.totalAmount),
-      0,
-    );
-    const totalDebtCents = sales.reduce(
-      (sum, sale) => sum + SaleService.toCents(sale.debt || 0),
-      0,
-    );
-    const totalQuantity = sales.reduce((sum, sale) => sum + sale.quantity, 0);
+    // Skip returned sales from totals
+    let totalRevenueCents = 0;
+    let totalDebtCents = 0;
+    let totalPaidCents = 0;
+    let totalQuantity = 0;
+    let totalReturned = 0;
+
+    for (const sale of sales) {
+      if (sale.status === "returned") {
+        totalReturned++;
+        continue;
+      }
+      totalRevenueCents += SaleService.toCents(sale.totalAmount);
+      totalDebtCents += SaleService.toCents(sale.debt || 0);
+      totalPaidCents += SaleService.toCents(sale.paidAmount || 0);
+      totalQuantity += sale.quantity;
+    }
 
     res.json({
       period: { startDate, endDate },
       summary: {
-        totalSales: sales.length,
+        totalSales: sales.length - totalReturned,
+        totalReturned,
         totalRevenue: SaleService.toDollar(totalRevenueCents),
         totalDebt: SaleService.toDollar(totalDebtCents),
+        totalPaid: SaleService.toDollar(totalPaidCents),
         totalQuantity,
       },
       sales,

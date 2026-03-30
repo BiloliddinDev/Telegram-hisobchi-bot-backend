@@ -1,10 +1,13 @@
 const express = require("express");
 const router = express.Router();
+const mongoose = require("mongoose");
 const Sale = require("../models/Sale");
 const Customer = require("../models/Customer");
 const User = require("../models/User");
 const SaleService = require("../utils/saleService");
 const { authenticate } = require("../middleware/auth");
+
+const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
 
 // 1. Asosiy hisobot
 router.get("/", authenticate, async (req, res) => {
@@ -16,22 +19,33 @@ router.get("/", authenticate, async (req, res) => {
     if (req.user.role === "seller") {
       query.seller = req.user._id;
     } else if (sellerId) {
+      if (!isValidObjectId(sellerId)) {
+        return res.status(400).json({ error: "Invalid seller ID format" });
+      }
       query.seller = sellerId;
     }
 
-    const startDate = new Date(
-      year || new Date().getFullYear(),
-      (month || new Date().getMonth()) - 1,
-      1,
-    );
-    const endDate = new Date(
-      year || new Date().getFullYear(),
-      month || new Date().getMonth(),
-      0,
-      23,
-      59,
-      59,
-    );
+    // Parse and validate year/month
+    const now = new Date();
+    const parsedYear = year ? parseInt(year) : now.getFullYear();
+    // User sends 1-indexed month (1=Jan), default to current month (1-indexed)
+    const parsedMonth = month ? parseInt(month) : now.getMonth() + 1;
+
+    if (
+      isNaN(parsedYear) ||
+      isNaN(parsedMonth) ||
+      parsedMonth < 1 ||
+      parsedMonth > 12
+    ) {
+      return res.status(400).json({
+        error: "Invalid year or month. Month must be 1-12.",
+      });
+    }
+
+    // JS Date month is 0-indexed: parsedMonth-1 converts 1-indexed to 0-indexed
+    const startDate = new Date(parsedYear, parsedMonth - 1, 1, 0, 0, 0, 0);
+    // Day 0 of the NEXT month = last day of the target month
+    const endDate = new Date(parsedYear, parsedMonth, 0, 23, 59, 59, 999);
 
     query.timestamp = { $gte: startDate, $lte: endDate };
 
@@ -40,25 +54,29 @@ router.get("/", authenticate, async (req, res) => {
       .populate("product", "name price")
       .sort({ timestamp: -1 });
 
-    // Cent bilan hisoblash
-    const totalRevenueCents = sales.reduce(
-      (sum, sale) => sum + SaleService.toCents(sale.totalAmount),
-      0,
-    );
-    const totalDebtCents = sales.reduce(
-      (sum, sale) => sum + SaleService.toCents(sale.debt || 0),
-      0,
-    );
-    const totalPaidCents = sales.reduce(
-      (sum, sale) => sum + SaleService.toCents(sale.paidAmount || 0),
-      0,
-    );
-    const totalQuantity = sales.reduce((sum, sale) => sum + sale.quantity, 0);
+    // Cent bilan hisoblash — qaytarilgan sotuvlarni hisobga olmaslik
+    let totalRevenueCents = 0;
+    let totalDebtCents = 0;
+    let totalPaidCents = 0;
+    let totalQuantity = 0;
+    let totalReturned = 0;
+
+    for (const sale of sales) {
+      if (sale.status === "returned") {
+        totalReturned++;
+        continue;
+      }
+      totalRevenueCents += SaleService.toCents(sale.totalAmount);
+      totalDebtCents += SaleService.toCents(sale.debt || 0);
+      totalPaidCents += SaleService.toCents(sale.paidAmount || 0);
+      totalQuantity += sale.quantity;
+    }
 
     res.json({
       period: { startDate, endDate },
       summary: {
-        totalSales: sales.length,
+        totalSales: sales.length - totalReturned,
+        totalReturned,
         totalRevenue: SaleService.toDollar(totalRevenueCents),
         totalDebt: SaleService.toDollar(totalDebtCents),
         totalPaid: SaleService.toDollar(totalPaidCents),
@@ -136,3 +154,4 @@ router.get("/debts", authenticate, async (req, res) => {
 });
 
 module.exports = router;
+

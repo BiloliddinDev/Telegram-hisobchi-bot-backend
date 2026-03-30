@@ -8,6 +8,7 @@ const path = require('path');
  * @param {Object} options - Additional options (headers, method, etc.)
  */
 const sendExcelToAPI = async (apiUrl, options = {}) => {
+  let filePath = null;
   try {
     console.log('Generating Excel file...');
     const { workbook, stats } = await exportAllTablesToExcel();
@@ -18,7 +19,7 @@ const sendExcelToAPI = async (apiUrl, options = {}) => {
 
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').split('T')[0];
     const filename = `database_export_${timestamp}.xlsx`;
-    const filePath = path.join(tempDir, filename);
+    filePath = path.join(tempDir, filename);
 
     // Write to file
     await workbook.xlsx.writeFile(filePath);
@@ -53,10 +54,6 @@ const sendExcelToAPI = async (apiUrl, options = {}) => {
       maxBodyLength: Infinity
     });
 
-    // Clean up temp file
-    await fs.unlink(filePath);
-    console.log('Temporary file deleted');
-
     return {
       success: true,
       response: response.data,
@@ -66,6 +63,16 @@ const sendExcelToAPI = async (apiUrl, options = {}) => {
   } catch (error) {
     console.error('Error sending Excel to API:', error);
     throw error;
+  } finally {
+    // Always clean up temp file
+    if (filePath) {
+      try {
+        await fs.unlink(filePath);
+        console.log('Temporary file deleted');
+      } catch (unlinkErr) {
+        console.error('Failed to delete temp file:', unlinkErr.message);
+      }
+    }
   }
 };
 
@@ -75,6 +82,7 @@ const sendExcelToAPI = async (apiUrl, options = {}) => {
  * @param {Object} bot - Telegram bot instance
  */
 const sendExcelViaTelegram = async (chatId, bot) => {
+  let filePath = null;
   try {
     console.log('Generating Excel file for Telegram...');
     const { workbook, stats } = await exportAllTablesToExcel();
@@ -85,7 +93,7 @@ const sendExcelViaTelegram = async (chatId, bot) => {
 
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const filename = `database_export_${timestamp}.xlsx`;
-    const filePath = path.join(tempDir, filename);
+    filePath = path.join(tempDir, filename);
 
     // Write to file
     await workbook.xlsx.writeFile(filePath);
@@ -104,10 +112,6 @@ const sendExcelViaTelegram = async (chatId, bot) => {
       parse_mode: 'Markdown'
     });
 
-    // Clean up temp file
-    await fs.unlink(filePath);
-    console.log('File sent via Telegram and temp file deleted');
-
     return {
       success: true,
       stats: stats
@@ -116,6 +120,16 @@ const sendExcelViaTelegram = async (chatId, bot) => {
   } catch (error) {
     console.error('Error sending Excel via Telegram:', error);
     throw error;
+  } finally {
+    // Always clean up temp file
+    if (filePath) {
+      try {
+        await fs.unlink(filePath);
+        console.log('File sent via Telegram and temp file deleted');
+      } catch (unlinkErr) {
+        console.error('Failed to delete temp file:', unlinkErr.message);
+      }
+    }
   }
 };
 

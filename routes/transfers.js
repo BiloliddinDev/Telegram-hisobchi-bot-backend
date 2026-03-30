@@ -8,6 +8,8 @@ const SellerProduct = require("../models/SellerProduct");
 const { authenticate, isAdmin } = require("../middleware/auth");
 const { transferStock } = require("./utils");
 
+const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
+
 router.use(authenticate);
 router.use(isAdmin);
 
@@ -35,15 +37,30 @@ router.post("/", async (req, res) => {
       return res.status(400).json({ error: "Items array is required" });
     }
 
+    if (!sellerId || !isValidObjectId(sellerId)) {
+      return res.status(400).json({ error: "Sotuvchi ID noto'g'ri" });
+    }
+
+    for (const item of items) {
+      if (!isValidObjectId(item.productId)) {
+        return res
+          .status(400)
+          .json({ error: `Notog'ri productId: ${item.productId}` });
+      }
+    }
+
     // Validate seller exists
     const seller = await User.findById(sellerId);
     if (!seller || seller.role !== "seller") {
       return res.status(404).json({ error: "Sotuvchi topilmadi" });
     }
 
-    const createdTransfers = [];
+    let createdTransfers = [];
 
     await session.withTransaction(async () => {
+      // Clear array in case of transaction retries
+      createdTransfers = [];
+
       // Extract product IDs
       const productIds = items.map((item) => item.productId);
 
@@ -55,11 +72,6 @@ router.post("/", async (req, res) => {
       // Turn to map
       const productMap = new Map(products.map((p) => [p._id.toString(), p]));
 
-      // Validate products exist
-      if (products.length !== productIds.length) {
-        throw new Error("One or more products not found");
-      }
-
       // Process each item in the transfer
       for (const item of items) {
         const { productId, quantity } = item;
@@ -70,6 +82,10 @@ router.post("/", async (req, res) => {
 
         // Get product from map
         const product = productMap.get(productId.toString());
+
+        if (!product) {
+          throw new Error(`Mahsulot topilmadi: ${productId}`);
+        }
 
         // Check warehouse stock availability
         if (product.warehouseQuantity < quantity) {

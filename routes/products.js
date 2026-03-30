@@ -1,9 +1,390 @@
 const express = require("express");
 const router = express.Router();
+const mongoose = require("mongoose");
+const multer = require("multer");
+const ExcelJS = require("exceljs");
 const Product = require("../models/Product");
 const Category = require("../models/Category");
 const { authenticate, isAdmin } = require("../middleware/auth");
 const { validateProduct } = require("../middleware/validation");
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+});
+
+const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
+
+// Helper: escape regex special characters to prevent ReDoS
+const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * @swagger
+ * /api/products/import/template:
+ *   get:
+ *     summary: Download an empty Excel template for bulk product import
+ *     tags: [Products]
+ *     security:
+ *       - TelegramAuth: []
+ *     responses:
+ *       200:
+ *         description: Excel template file
+ *         content:
+ *           application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+ *             schema:
+ *               type: string
+ *               format: binary
+ */
+router.get("/import/template", async (req, res) => {
+  try {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet("Products");
+
+    // Define columns
+    worksheet.columns = [
+      { header: "Name (Required)", key: "name", width: 30 },
+      { header: "Price (Required)", key: "price", width: 15 },
+      { header: "CostPrice", key: "costPrice", width: 15 },
+      { header: "Category (Required)", key: "category", width: 20 },
+      { header: "WarehouseQuantity", key: "warehouseQuantity", width: 18 },
+      { header: "SKU", key: "sku", width: 15 },
+      { header: "Color", key: "color", width: 15 },
+      { header: "Description", key: "description", width: 35 },
+      { header: "Image URL", key: "image", width: 30 },
+    ];
+
+    // Style headers
+    const headerRow = worksheet.getRow(1);
+    headerRow.font = { bold: true, color: { argb: "FFFFFFFF" } };
+    headerRow.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FF4472C4" },
+    };
+
+    // Add example rows to guide the user
+    worksheet.addRows([
+      {
+        name: "Misol: iPhone 15 Pro Max 256GB",
+        price: 1200,
+        costPrice: 1000,
+        category: "Smartphones",
+        warehouseQuantity: 50,
+        sku: "IP15PM-256",
+        color: "Qora",
+        description: "Asosiy parametrlar to'ldirilgan ideal misol",
+        image: "https://example.com/ip15.png",
+      },
+      {
+        name: "Misol: AirPods Pro 2",
+        price: 250,
+        costPrice: 200,
+        category: "Naushniklar",
+        warehouseQuantity: 100,
+        sku: "APP2",
+        color: "Oq",
+      },
+      {
+        name: "Misol: Oddiy Telefon Stenkasi",
+        price: 15,
+        category: "Aksessuarlar",
+        // Qolgan maydonlar bo'sh (ixtiyoriy ekanligini ko'rsatish)
+        description: "Faqat majburiy maydonlar to'ldirilgan",
+      },
+      {
+        name: "Misol: MacBook Air M2",
+        price: 1100,
+        costPrice: 950,
+        category: "Noutbuklar",
+        warehouseQuantity: 0, // Nol miqdor namunasi
+        sku: "MBA-M2-S",
+        color: "Kumush",
+      },
+      {
+        name: "Misol: USB-C Kabel 1 metr",
+        price: 20,
+        costPrice: 5,
+        category: "Kabellar",
+        warehouseQuantity: 500,
+        sku: "CBL-1M",
+        color: "Oq",
+      },
+    ]);
+
+    // Style example rows slightly differently to stand out (optional grey text)
+    for (let i = 2; i <= 6; i++) {
+      worksheet.getRow(i).font = { color: { argb: "FF666666" }, italic: true };
+    }
+
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    );
+    res.setHeader(
+      "Content-Disposition",
+      'attachment; filename="products_import_template.xlsx"'
+    );
+
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (error) {
+    console.error("Template error:", error);
+    if (!res.headersSent) {
+      res.status(500).json({ error: error.message });
+    }
+  }
+});
+
+/**
+ * @swagger
+ * /api/products/import:
+ *   post:
+ *     summary: Bulk import products via Excel
+ *     tags: [Products]
+ *     security:
+ *       - TelegramAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *                 description: Excel file (.xlsx) up to 1000 rows
+ *     responses:
+ *       200:
+ *         description: Import result with success/skip counts
+ */
+router.post(
+  "/import",
+  authenticate,
+  isAdmin,
+  upload.single("file"),
+  async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "XLSX fayl yuklanmadi" });
+      }
+
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(req.file.buffer);
+      const worksheet = workbook.worksheets[0];
+
+      if (!worksheet) {
+        return res
+          .status(400)
+          .json({ error: "Excel fayli bo'sh yoki o'qib bo'lmadi" });
+      }
+
+      const rows = [];
+      worksheet.eachRow((row, rowNumber) => {
+        // Skip header
+        if (rowNumber === 1) return;
+        rows.push(row.values);
+      });
+
+      if (rows.length === 0) {
+        return res.status(400).json({ error: "Faylda ma'lumot yo'q" });
+      }
+
+      if (rows.length > 1000) {
+        return res.status(400).json({
+          error: "Bitta faylda 1000 tadan ortiq mahsulot bo'lishi mumkin emas",
+        });
+      }
+
+      const imported = [];
+      const skipped = [];
+      const errors = [];
+      const uniqueCategories = new Set();
+      const parsedData = [];
+
+      for (let i = 0; i < rows.length; i++) {
+        const rowData = rows[i];
+        const rowNum = i + 2;
+
+        const name = rowData[1] ? String(rowData[1]).trim() : "";
+        const price = Number(rowData[2]);
+        const costPrice = Number(rowData[3]) || 0;
+        const categoryName = rowData[4] ? String(rowData[4]).trim() : "";
+        const warehouseQuantity = Number(rowData[5]) || 0;
+        const sku = rowData[6] ? String(rowData[6]).trim() : "";
+        const color = rowData[7] ? String(rowData[7]).trim() : "";
+        const description = rowData[8] ? String(rowData[8]).trim() : "";
+        const image = rowData[9] ? String(rowData[9]).trim() : "";
+
+        if (!name || isNaN(price) || !categoryName) {
+          errors.push({
+            row: rowNum,
+            message:
+              "Majburiy maydonlar (Name, Price, Category) to'liq emas yoki noto'g'ri turda",
+          });
+          continue;
+        }
+
+        uniqueCategories.add(categoryName);
+        parsedData.push({
+          rowNum,
+          name,
+          price,
+          costPrice,
+          categoryName,
+          warehouseQuantity,
+          sku,
+          color,
+          description,
+          image,
+        });
+      }
+
+      // Process Categories (Find existing, create missing)
+      const categoryMap = new Map();
+      const existingCats = await Category.find({
+        name: { $in: Array.from(uniqueCategories) },
+      });
+      existingCats.forEach((c) =>
+        categoryMap.set(c.name.toLowerCase(), c._id)
+      );
+
+      const newCatsToCreate = [];
+      for (const catName of uniqueCategories) {
+        if (!categoryMap.has(catName.toLowerCase())) {
+          newCatsToCreate.push({ name: catName });
+        }
+      }
+
+      if (newCatsToCreate.length > 0) {
+        // Continue on dups error in insertMany
+        try {
+          const insertedCats = await Category.insertMany(newCatsToCreate, {
+            ordered: false,
+          });
+          insertedCats.forEach((c) =>
+            categoryMap.set(c.name.toLowerCase(), c._id)
+          );
+        } catch (catErr) {
+          // If some insert failed due to duplicate keys (race condition), just re-fetch them
+          const newExisting = await Category.find({
+            name: { $in: newCatsToCreate.map((n) => n.name) },
+          });
+          newExisting.forEach((c) =>
+            categoryMap.set(c.name.toLowerCase(), c._id)
+          );
+        }
+      }
+
+      // Process Products - Find dups by Name or SKU
+      const allNames = parsedData.map((d) => d.name);
+      const allSkus = parsedData.map((d) => d.sku).filter(Boolean);
+
+      let orConditions = [];
+      if (allNames.length > 0) orConditions.push({ name: { $in: allNames } });
+      if (allSkus.length > 0) orConditions.push({ sku: { $in: allSkus } });
+
+      let existingProducts = [];
+      if (orConditions.length > 0) {
+        existingProducts = await Product.find({ $or: orConditions }).select(
+          "name sku"
+        );
+      }
+
+      const existingNamesSet = new Set(
+        existingProducts.map((p) => p.name.toLowerCase())
+      );
+      const existingSkusSet = new Set(
+        existingProducts.filter((p) => p.sku).map((p) => p.sku.toLowerCase())
+      );
+
+      // Chunk into 50 and Save
+      let bulkOps = [];
+      const BATCH_SIZE = 50;
+
+      for (const item of parsedData) {
+        const nameLower = item.name.toLowerCase();
+        const skuLower = item.sku ? item.sku.toLowerCase() : null;
+
+        if (
+          existingNamesSet.has(nameLower) ||
+          (skuLower && existingSkusSet.has(skuLower))
+        ) {
+          skipped.push({
+            row: item.rowNum,
+            name: item.name,
+            reason: "Ushbu mahsulot nomi yoki SKU si bazada mavjud (Dublikat)",
+          });
+          continue;
+        }
+
+        const catId = categoryMap.get(item.categoryName.toLowerCase());
+        if (!catId) {
+          errors.push({
+            row: item.rowNum,
+            message: "Kategoriya topilmadi va yaratib ham bo'lmadi",
+          });
+          continue;
+        }
+
+        bulkOps.push({
+          insertOne: {
+            document: {
+              name: item.name,
+              price: item.price,
+              costPrice: item.costPrice,
+              category: catId,
+              warehouseQuantity: item.warehouseQuantity,
+              sku: item.sku,
+              color: item.color,
+              description: item.description,
+              image: item.image,
+              isActive: true,
+            },
+          },
+        });
+
+        // Use Set to prevent local duplicates across the uploaded file
+        existingNamesSet.add(nameLower);
+        if (skuLower) existingSkusSet.add(skuLower);
+
+        if (bulkOps.length === BATCH_SIZE) {
+          try {
+            await Product.bulkWrite(bulkOps, { ordered: false });
+            imported.push(...bulkOps.map((op) => op.insertOne.document.name));
+          } catch (writeErr) {
+            console.error("Bulk write error: ", writeErr);
+          }
+          bulkOps = [];
+        }
+      }
+
+      if (bulkOps.length > 0) {
+        try {
+          await Product.bulkWrite(bulkOps, { ordered: false });
+          imported.push(...bulkOps.map((op) => op.insertOne.document.name));
+        } catch (writeErr) {
+          console.error("Bulk write error: ", writeErr);
+        }
+      }
+
+      res.json({
+        success: true,
+        message: "Import yakunlandi",
+        importedCount: imported.length,
+        skippedCount: skipped.length,
+        errorsCount: errors.length,
+        details: {
+          skipped,
+          errors,
+        },
+      });
+    } catch (error) {
+      console.error("Import error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  }
+);
 
 // Get all products (admin only)
 router.get("/", authenticate, isAdmin, async (req, res) => {
@@ -11,11 +392,17 @@ router.get("/", authenticate, isAdmin, async (req, res) => {
     const { category, search, page = 1, limit = 10 } = req.query;
 
     const filter = {};
-    if (category) filter.category = category;
+    if (category) {
+      if (!isValidObjectId(category)) {
+        return res.status(400).json({ error: "Invalid category ID format" });
+      }
+      filter.category = category;
+    }
     if (search) {
+      const escaped = escapeRegex(search);
       filter.$or = [
-        { name: { $regex: search, $options: "i" } },
-        { sku: { $regex: search, $options: "i" } },
+        { name: { $regex: escaped, $options: "i" } },
+        { sku: { $regex: escaped, $options: "i" } },
       ];
     }
 
@@ -35,6 +422,10 @@ router.get("/", authenticate, isAdmin, async (req, res) => {
 // Get single productId
 router.get("/:id", authenticate, async (req, res) => {
   try {
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({ error: "Invalid product ID format" });
+    }
+
     const product = await Product.findById(req.params.id).populate("category");
 
     if (!product) {
@@ -61,10 +452,15 @@ router.post("/", authenticate, isAdmin, validateProduct, async (req, res) => {
       sku,
       color,
     } = req.body;
+
+    if (!isValidObjectId(category)) {
+      return res.status(400).json({ error: "Invalid category ID format" });
+    }
+
     const categoryExists = await Category.exists({ _id: category });
 
     if (!categoryExists) {
-      res.status(400).json({ error: "Category not found" });
+      return res.status(400).json({ error: "Category not found" });
     }
 
     const product = await Product.create({
@@ -88,6 +484,10 @@ router.post("/", authenticate, isAdmin, validateProduct, async (req, res) => {
 // Update product (admin only)
 router.put("/:id", authenticate, isAdmin, validateProduct, async (req, res) => {
   try {
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({ error: "Invalid product ID format" });
+    }
+
     const {
       name,
       description,
@@ -101,10 +501,14 @@ router.put("/:id", authenticate, isAdmin, validateProduct, async (req, res) => {
       isActive,
     } = req.body;
 
+    if (!isValidObjectId(category)) {
+      return res.status(400).json({ error: "Invalid category ID format" });
+    }
+
     const categoryExists = await Category.exists({ _id: category });
 
     if (!categoryExists) {
-      res.status(400).json({ error: "Category not found" });
+      return res.status(400).json({ error: "Category not found" });
     }
 
     const product = await Product.findByIdAndUpdate(
@@ -137,6 +541,10 @@ router.put("/:id", authenticate, isAdmin, validateProduct, async (req, res) => {
 // Partial update product
 router.patch("/:id", authenticate, isAdmin, async (req, res) => {
   try {
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({ error: "Invalid product ID format" });
+    }
+
     const allowedFields = [
       "name",
       "description",
@@ -153,7 +561,8 @@ router.patch("/:id", authenticate, isAdmin, async (req, res) => {
     const updates = {};
 
     for (const field of allowedFields) {
-      if (req.body[field]) {
+      // Use 'in' operator instead of truthiness to allow 0, false, ""
+      if (field in req.body) {
         updates[field] = req.body[field];
       }
     }
@@ -163,7 +572,10 @@ router.patch("/:id", authenticate, isAdmin, async (req, res) => {
     }
 
     if (updates.category) {
-      const categoryExists = await Category.findById({ _id: updates.category });
+      if (!isValidObjectId(updates.category)) {
+        return res.status(400).json({ error: "Invalid category ID format" });
+      }
+      const categoryExists = await Category.exists({ _id: updates.category });
       if (!categoryExists) {
         return res.status(404).json({ error: "Category not found" });
       }
@@ -185,19 +597,28 @@ router.patch("/:id", authenticate, isAdmin, async (req, res) => {
   }
 });
 
-// Delete product (admin only)
+// Delete product (admin only) — soft delete
 router.delete("/:id", authenticate, isAdmin, async (req, res) => {
   try {
-    // const product = await Product.findByIdAndDelete(req.params.id);
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({ error: "Invalid product ID format" });
+    }
 
-    // if (!product) {
-    //   return res.status(404).json({ error: "Product not found" });
-    // }
+    const product = await Product.findByIdAndUpdate(
+      req.params.id,
+      { $set: { isActive: false } },
+      { new: true },
+    );
 
-    res.json({ message: "Product deleted successfully" });
+    if (!product) {
+      return res.status(404).json({ error: "Product not found" });
+    }
+
+    res.json({ message: "Product deleted successfully (soft)", product });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
 module.exports = router;
+

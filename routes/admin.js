@@ -18,6 +18,9 @@ const {
 } = require("./utils");
 const SaleService = require("../utils/saleService");
 
+// Helper: validate MongoDB ObjectId format
+const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
+
 router.use(authenticate);
 router.use(isAdmin);
 
@@ -33,10 +36,13 @@ router.get("/sellers", async (req, res) => {
   }
 });
 
-// Get all sellers
+// Get seller by id
 router.get("/sellers/:id", async (req, res) => {
   try {
-    const seller = await User.findById({ role: "seller", _id: req.params.id });
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({ error: "Invalid seller ID format" });
+    }
+    const seller = await User.findOne({ role: "seller", _id: req.params.id });
     if (!seller) {
       return res.status(404).json({ error: "Seller not found" });
     }
@@ -76,28 +82,32 @@ router.post("/sellers", validateSeller, async (req, res) => {
 // Update seller
 router.put("/sellers/:id", async (req, res) => {
   try {
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({ error: "Invalid seller ID format" });
+    }
+
     const { username, firstName, lastName, phoneNumber, avatarUrl, isActive } =
       req.body;
 
-    // First, find the seller to check their status
-    const existingSeller = await User.findById(req.params.id);
-
-    if (!existingSeller || existingSeller.role !== "seller") {
-      return res.status(404).json({ error: "Seller not found" });
+    // Check if phone number is already taken by another user
+    if (phoneNumber) {
+      const phoneOwner = await User.findOne({ phoneNumber, _id: { $ne: req.params.id } });
+      if (phoneOwner) {
+        return res.status(400).json({
+          error: "Ushbu telefon raqamli foydalanuvchi allaqachon mavjud",
+        });
+      }
     }
 
-    // Prevent updates if seller is inactive or deleted
-    if (!existingSeller.isActive || existingSeller.isDeleted) {
-      return res
-        .status(403)
-        .json({ error: "Cannot update inactive or deleted seller" });
-    }
-
-    const seller = await User.findByIdAndUpdate(
-      req.params.id,
+    const seller = await User.findOneAndUpdate(
+      { _id: req.params.id, role: "seller", isActive: true, isDeleted: { $ne: true } },
       { username, firstName, lastName, phoneNumber, avatarUrl, isActive },
       { new: true }
     ).select("-__v");
+
+    if (!seller) {
+      return res.status(404).json({ error: "Seller not found or cannot be updated" });
+    }
 
     res.json({ seller });
   } catch (error) {
@@ -105,18 +115,22 @@ router.put("/sellers/:id", async (req, res) => {
   }
 });
 
-// Delete seller (Actually make as deleted)
+// Delete seller (Actually make as deleted) (Soft)
 router.delete("/sellers/:id", async (req, res) => {
   try {
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({ error: "Invalid seller ID format" });
+    }
+
     const seller = await User.findById(req.params.id);
 
     if (!seller || seller.role !== "seller") {
       return res.status(404).json({ error: "Seller not found" });
     }
 
-    await seller.delete();
+    await seller.softDelete();
 
-    res.json({ message: "Seller inactivated successfully" });
+    res.json({ message: "Seller deleted successfully (soft)" });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -136,6 +150,9 @@ router.get("/seller-stocks", async (req, res) => {
 router.get("/sellers/:sellerId/products", async (req, res) => {
   try {
     const { sellerId } = req.params;
+    if (!isValidObjectId(sellerId)) {
+      return res.status(400).json({ error: "Invalid seller ID format" });
+    }
 
     const sellerProducts = await SellerProduct.find({
       seller: sellerId,
@@ -163,7 +180,10 @@ router.get("/sellers/:sellerId/products", async (req, res) => {
 router.get("/sellers/:sellerId/stocks", async (req, res) => {
   try {
     const { sellerId } = req.params;
-    const seller = await User.findById(sellerId);
+    if (!isValidObjectId(sellerId)) {
+      return res.status(400).json({ error: "Invalid seller ID format" });
+    }
+    const seller = await User.findOne({ role: "seller", _id: sellerId });
     if (!seller) {
       return res.status(404).json({ error: "Seller not found" });
     }
@@ -177,6 +197,9 @@ router.get("/sellers/:sellerId/stocks", async (req, res) => {
 router.get("/sellers/:sellerId/sales", async (req, res) => {
   try {
     const { sellerId } = req.params;
+    if (!isValidObjectId(sellerId)) {
+      return res.status(400).json({ error: "Invalid seller ID format" });
+    }
     const { start, end, date } = req.query;
 
     const query = { seller: new mongoose.Types.ObjectId(sellerId) };
@@ -187,10 +210,12 @@ router.get("/sellers/:sellerId/sales", async (req, res) => {
         $lte: new Date(`${end}T23:59:59.999Z`),
       };
     } else if (date) {
-      const startOfDay = new Date(date);
-      startOfDay.setHours(0, 0, 0, 0);
-      const endOfDay = new Date(date);
-      endOfDay.setHours(23, 59, 59, 999);
+      // Use explicit UTC to avoid server timezone mismatch
+      const startOfDay = new Date(`${date}T00:00:00.000Z`);
+      const endOfDay = new Date(`${date}T23:59:59.999Z`);
+      if (isNaN(startOfDay) || isNaN(endOfDay)) {
+        return res.status(400).json({ error: "Invalid date format. Use YYYY-MM-DD" });
+      }
       query.timestamp = { $gte: startOfDay, $lte: endOfDay };
     }
 
@@ -234,19 +259,19 @@ router.get("/sellers/:sellerId/sales", async (req, res) => {
       if (sale.status !== "returned") {
         groupsMap[key].totalAmount = SaleService.toDollar(
           SaleService.toCents(groupsMap[key].totalAmount) +
-            SaleService.toCents(sale.totalAmount),
+          SaleService.toCents(sale.totalAmount),
         );
         groupsMap[key].debt = SaleService.toDollar(
           SaleService.toCents(groupsMap[key].debt) +
-            SaleService.toCents(sale.debt || 0),
+          SaleService.toCents(sale.debt || 0),
         );
         groupsMap[key].paidAmount = SaleService.toDollar(
           SaleService.toCents(groupsMap[key].paidAmount) +
-            SaleService.toCents(sale.paidAmount || 0),
+          SaleService.toCents(sale.paidAmount || 0),
         );
         groupsMap[key].rawTotal = SaleService.toDollar(
           SaleService.toCents(groupsMap[key].rawTotal) +
-            SaleService.toCents(sale.price * sale.quantity),
+          SaleService.toCents(sale.price * sale.quantity),
         );
       }
       groupsMap[key].discountPercent = sale.discountPercent || 0;
@@ -291,6 +316,9 @@ router.get("/sellers/:sellerId/sales", async (req, res) => {
 router.get("/products/:productId/stocks", async (req, res) => {
   try {
     const { productId } = req.params;
+    if (!isValidObjectId(productId)) {
+      return res.status(400).json({ error: "Invalid product ID format" });
+    }
 
     const productStocks = await SellerStock.findByProduct(productId);
 
@@ -312,10 +340,14 @@ router.patch("/seller-stocks/:stockId", async (req, res) => {
   const session = await mongoose.startSession();
   try {
     const { stockId } = req.params;
+    if (!isValidObjectId(stockId)) {
+      return res.status(400).json({ error: "Invalid stock ID format" });
+    }
+
     const { quantity } = req.body;
 
     if (typeof quantity !== "number" || quantity < 0) {
-      throw new Error("Valid quantity is required (must be >= 0)");
+      return res.status(400).json({ error: "Valid quantity is required (must be >= 0)" });
     }
 
     await session.withTransaction(async () => {
@@ -326,6 +358,14 @@ router.patch("/seller-stocks/:stockId", async (req, res) => {
 
       if (!sellerStock) {
         throw new Error("Seller stock not found");
+      }
+
+      // Guard against null populated references (deleted seller/product)
+      if (!sellerStock.seller) {
+        throw new Error("Referenced seller no longer exists");
+      }
+      if (!sellerStock.product) {
+        throw new Error("Referenced product no longer exists");
       }
 
       if (sellerStock.quantity === 0) {
@@ -388,6 +428,13 @@ router.post(
   "/sellers/:sellerId/products/:productId/assign",
   async (req, res) => {
     try {
+      if (!isValidObjectId(req.params.sellerId)) {
+        return res.status(400).json({ error: "Invalid seller ID format" });
+      }
+      if (!isValidObjectId(req.params.productId)) {
+        return res.status(400).json({ error: "Invalid product ID format" });
+      }
+
       const seller = await User.findById(req.params.sellerId);
       const product = await Product.findById(req.params.productId);
 
@@ -415,6 +462,12 @@ router.delete(
     const session = await mongoose.startSession();
     try {
       const { sellerId, productId } = req.params;
+      if (!isValidObjectId(sellerId)) {
+        return res.status(400).json({ error: "Invalid seller ID format" });
+      }
+      if (!isValidObjectId(productId)) {
+        return res.status(400).json({ error: "Invalid product ID format" });
+      }
       const returnStock = req.query.returnStock === "true"; // ?returnStock=true
 
       await session.withTransaction(async () => {
@@ -486,6 +539,9 @@ router.delete("/seller-stocks/:stockId", async (req, res) => {
   const session = await mongoose.startSession();
   try {
     const { stockId } = req.params;
+    if (!isValidObjectId(stockId)) {
+      return res.status(400).json({ error: "Invalid stock ID format" });
+    }
     const { unassign } = req.query; // ?unassign=true to also unassign the product
 
     let returnedQuantity = 0;
@@ -501,6 +557,14 @@ router.delete("/seller-stocks/:stockId", async (req, res) => {
 
       if (!existingSellerStock) {
         throw new Error("SellerStock not found");
+      }
+
+      // Guard against null populated references (deleted seller/product)
+      if (!existingSellerStock.seller) {
+        throw new Error("Referenced seller no longer exists");
+      }
+      if (!existingSellerStock.product) {
+        throw new Error("Referenced product no longer exists");
       }
 
       returnedQuantity = existingSellerStock.quantity;

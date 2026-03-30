@@ -7,6 +7,33 @@ const {
   sendExcelViaTelegram,
 } = require("../utils/excelSender");
 
+// Helper: validate URL format and block private/internal addresses (SSRF protection)
+const isAllowedUrl = (urlString) => {
+  try {
+    const url = new URL(urlString);
+    if (!['http:', 'https:'].includes(url.protocol)) return false;
+    // Block private/internal hostnames
+    const hostname = url.hostname.toLowerCase();
+    const blocked = [
+      'localhost', '127.0.0.1', '0.0.0.0', '::1',
+      '169.254.169.254', // Cloud metadata
+      'metadata.google.internal',
+    ];
+    if (blocked.includes(hostname)) return false;
+    // Block private IP ranges (10.x, 172.16-31.x, 192.168.x)
+    const parts = hostname.split('.');
+    if (parts.length === 4 && parts.every(p => !isNaN(p))) {
+      const [a, b] = parts.map(Number);
+      if (a === 10) return false;
+      if (a === 172 && b >= 16 && b <= 31) return false;
+      if (a === 192 && b === 168) return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 /**
  * @swagger
  * /api/export/database:
@@ -57,24 +84,32 @@ router.get("/database", authenticate, isAdmin, async (req, res) => {
       .split("T")[0];
     const filename = `database_export_${timestamp}.xlsx`;
 
+    // Write to buffer first to get Content-Length and avoid
+    // ERR_HTTP_HEADERS_SENT if streaming fails mid-response
+    const buffer = await workbook.xlsx.writeBuffer();
+
     // Set response headers
     res.setHeader(
       "Content-Type",
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     );
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.setHeader("Content-Length", buffer.byteLength);
 
-    // Write to response
-    await workbook.xlsx.write(res);
+    // Send buffer
+    res.send(Buffer.from(buffer));
 
     console.log("Database export completed successfully");
     console.log("Export stats:", stats);
   } catch (error) {
     console.error("Error exporting database:", error);
-    res.status(500).json({
-      error: "Failed to export database",
-      message: error.message,
-    });
+    // Only send error if headers haven't been sent yet
+    if (!res.headersSent) {
+      res.status(500).json({
+        error: "Failed to export database",
+        message: error.message,
+      });
+    }
   }
 });
 
@@ -219,6 +254,13 @@ router.post("/send", authenticate, isAdmin, async (req, res) => {
       case "api":
         if (!apiUrl) {
           return res.status(400).json({ error: "API URL is required" });
+        }
+
+        if (!isAllowedUrl(apiUrl)) {
+          return res.status(400).json({
+            error: "Invalid or disallowed API URL",
+            message: "URL must be a valid public HTTP/HTTPS address",
+          });
         }
 
         result = await sendExcelToAPI(apiUrl, {

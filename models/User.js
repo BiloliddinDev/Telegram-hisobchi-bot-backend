@@ -64,7 +64,7 @@ UserSchema.methods.activate = async function (toSave = true) {
   return this;
 };
 
-UserSchema.methods.delete = async function (toSave = true) {
+UserSchema.methods.softDelete = async function (toSave = true) {
   this.isDeleted = true;
   this.isActive = false;
   if (toSave) await this.save();
