@@ -5,6 +5,7 @@ const Sale = require("../models/Sale");
 const Customer = require("../models/Customer");
 const { authenticate, isSeller } = require("../middleware/auth");
 const mongoose = require("mongoose");
+const SaleService = require("../utils/saleService");
 
 router.use(authenticate);
 router.use(isSeller);
@@ -14,31 +15,37 @@ router.post("/", async (req, res) => {
   const session = await mongoose.startSession();
   try {
     const { orderId, amount, notes } = req.body;
+    const parsedAmount = Number(amount);
 
-    if (!orderId || !amount || amount <= 0) {
+    if (!orderId || !amount || isNaN(parsedAmount) || parsedAmount <= 0) {
       return res.status(400).json({ error: "orderId va amount majburiy" });
     }
 
-    // Shu orderIdga tegishli barcha sotuvlarni topish
-    const sales = await Sale.find({
-      orderId,
-      seller: req.user._id,
-    });
-
-    if (!sales.length) {
-      return res.status(404).json({ error: "Order topilmadi" });
-    }
-
-    // Jami qarz hisoblash
-    const totalDebt = sales.reduce((sum, s) => sum + s.debt, 0);
-
-    if (amount > totalDebt) {
-      return res.status(400).json({
-        error: `Qarz ${totalDebt}$ — undan ko'p to'lab bo'lmaydi`,
-      });
-    }
+    const amountCents = SaleService.toCents(parsedAmount);
 
     await session.withTransaction(async () => {
+      // Fetch sales INSIDE transaction to prevent race conditions
+      const sales = await Sale.find({
+        orderId,
+        seller: req.user._id,
+      }).session(session);
+
+      if (!sales.length) {
+        throw new Error("Order topilmadi");
+      }
+
+      // Jami qarz hisoblash (cents-based)
+      const totalDebtCents = sales.reduce(
+        (sum, s) => sum + SaleService.toCents(s.debt),
+        0,
+      );
+
+      if (amountCents > totalDebtCents) {
+        throw new Error(
+          `Qarz ${SaleService.toDollar(totalDebtCents)}$ — undan ko'p to'lab bo'lmaydi`,
+        );
+      }
+
       // Payment yaratish
       await Payment.create(
         [
@@ -46,32 +53,50 @@ router.post("/", async (req, res) => {
             sale: sales[0]._id,
             seller: req.user._id,
             customer: sales[0].customer || null,
-            amount,
+            amount: SaleService.toDollar(amountCents),
             notes: notes || "",
           },
         ],
         { session },
       );
 
-      // Har bir sotuvda qarzni kamaytirish
-      let remaining = amount;
+      // Har bir sotuvda qarzni kamaytirish (cents-based)
+      let remainingCents = amountCents;
       for (const sale of sales) {
-        if (remaining <= 0) break;
-        const pay = Math.min(remaining, sale.debt);
-        sale.debt -= pay;
-        sale.paidAmount += pay;
-        sale.isDebt = sale.debt > 0;
-        remaining -= pay;
+        if (remainingCents <= 0) break;
+
+        const saleDebtCents = SaleService.toCents(sale.debt);
+        const payCents = Math.min(remainingCents, saleDebtCents);
+
+        const newDebt = SaleService.toDollar(saleDebtCents - payCents);
+        const newPaid = SaleService.toDollar(
+          SaleService.toCents(sale.paidAmount) + payCents,
+        );
+
+        sale.debt = newDebt;
+        sale.paidAmount = newPaid;
+        sale.isDebt = newDebt > 0;
+        sale.status = newDebt === 0 ? "paid" : "partial";
+        remainingCents -= payCents;
         await sale.save({ session });
       }
 
-      // Customer totalDebt yangilash
+      // Customer totalDebt yangilash (safe: compute exact new value, floor at 0)
       if (sales[0].customer) {
-        await Customer.findByIdAndUpdate(
-          sales[0].customer,
-          { $inc: { totalDebt: -amount } },
-          { session },
+        const customer = await Customer.findById(sales[0].customer).session(
+          session,
         );
+        if (customer) {
+          const customerDebtCents = SaleService.toCents(customer.totalDebt);
+          const newCustomerDebt = SaleService.toDollar(
+            Math.max(0, customerDebtCents - amountCents),
+          );
+          await Customer.findByIdAndUpdate(
+            customer._id,
+            { $set: { totalDebt: newCustomerDebt } },
+            { session },
+          );
+        }
       }
     });
 
@@ -95,9 +120,15 @@ router.get("/:orderId", async (req, res) => {
       return res.status(404).json({ error: "Order topilmadi" });
     }
 
-    const totalAmount = sales.reduce((sum, s) => sum + s.totalAmount, 0);
-    const totalPaid = sales.reduce((sum, s) => sum + s.paidAmount, 0);
-    const totalDebt = sales.reduce((sum, s) => sum + s.debt, 0);
+    const totalAmount = SaleService.toDollar(
+      sales.reduce((sum, s) => sum + SaleService.toCents(s.totalAmount), 0),
+    );
+    const totalPaid = SaleService.toDollar(
+      sales.reduce((sum, s) => sum + SaleService.toCents(s.paidAmount), 0),
+    );
+    const totalDebt = SaleService.toDollar(
+      sales.reduce((sum, s) => sum + SaleService.toCents(s.debt), 0),
+    );
 
     res.json({ totalAmount, totalPaid, totalDebt });
   } catch (error) {
@@ -106,3 +137,4 @@ router.get("/:orderId", async (req, res) => {
 });
 
 module.exports = router;
+

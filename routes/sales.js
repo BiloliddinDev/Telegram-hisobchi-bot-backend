@@ -85,15 +85,18 @@ router.post("/batch", async (req, res) => {
           );
         }
 
-        customerId = customer._id;
+      customerId = customer._id;
 
-        // Mijoz qarzini yangilash
+        // Mijoz qarzini yangilash (safe: compute exact value to prevent float drift)
         if (debt > 0) {
+          const currentDebtCents = SaleService.toCents(customer.totalDebt);
+          const newDebt = SaleService.toDollar(
+            currentDebtCents + SaleService.toCents(debt),
+          );
           await Customer.findByIdAndUpdate(
             customerId,
             {
-              $inc: { totalDebt: debt },
-              $set: { lastPurchase: new Date() },
+              $set: { totalDebt: newDebt, lastPurchase: new Date() },
             },
             { session },
           );
@@ -178,10 +181,13 @@ router.get("/", async (req, res) => {
     let query = { seller: req.user._id };
 
     if (startDate && endDate) {
-      query.timestamp = {
-        $gte: new Date(startDate),
-        $lte: new Date(new Date(endDate).setHours(23, 59, 59, 999)),
-      };
+      // Use explicit UTC to avoid server timezone mismatch
+      const start = new Date(`${startDate}T00:00:00.000Z`);
+      const end = new Date(`${endDate}T23:59:59.999Z`);
+      if (isNaN(start) || isNaN(end)) {
+        return res.status(400).json({ error: "Invalid date format. Use YYYY-MM-DD" });
+      }
+      query.timestamp = { $gte: start, $lte: end };
     }
 
     const sales = await Sale.find(query)
@@ -206,7 +212,9 @@ router.get("/", async (req, res) => {
           paidAmount: 0,
           totalAmount: 0,
           discount: 0,
-          discountPercent: 0,
+          discountPercent: sale.discountPercent || 0,
+          status: sale.status,
+          dueDate: sale.dueDate,
         };
       }
 
@@ -238,6 +246,7 @@ router.get("/", async (req, res) => {
             SaleService.toCents(sale.discount || 0),
         );
       }
+      groupsMap[key].discountPercent = sale.discountPercent || 0;
     }
 
     const groupedSales = Object.values(groupsMap)
@@ -276,40 +285,49 @@ router.post("/return", async (req, res) => {
       return res.status(400).json({ error: "returnType: 'cash' yoki 'debt' bo'lishi kerak" });
     }
 
-    // Buyurtmadagi barcha sale recordlarni topish
-    const orderSales = await Sale.find({
-      orderId,
-      seller: req.user._id,
-    }).populate("product", "name _id");
+    let totalCashBack = 0;   // naqd qaytariladigan summa
+    let totalDebtCut = 0;    // qarzdan ayiriladigan summa
+    let isCustomer = false;
+    let customerType = "noname";
 
-    if (!orderSales || orderSales.length === 0) {
-      return res.status(404).json({ error: "Buyurtma topilmadi" });
-    }
+    await session.withTransaction(async () => {
+      // Fetch order sales INSIDE transaction to prevent double-return race condition
+      const orderSales = await Sale.find({
+        orderId,
+        seller: req.user._id,
+      })
+        .populate("product", "name _id")
+        .session(session);
 
-    // Hammasi allaqachon qaytarilganmi?
-    const allReturned = orderSales.every((s) => s.status === "returned");
-    if (allReturned) {
-      return res.status(400).json({ error: "Bu buyurtma allaqachon qaytarilgan" });
-    }
-
-    const firstSale = orderSales[0];
-    const isCustomer = !!firstSale.customer; // doimiy mijoz
-
-    // ── 1-tur: Noname → 7 kun limit ──────────────────────────────────
-    if (!isCustomer) {
-      const diffDays =
-        (Date.now() - new Date(firstSale.timestamp).getTime()) /
-        (1000 * 60 * 60 * 24);
-
-      if (diffDays > NONAME_RETURN_DAYS) {
-        return res.status(400).json({
-          error: `Qaytarish muddati o'tib ketdi. Bir martalik mijoz uchun ${NONAME_RETURN_DAYS} kun ichida qaytarish mumkin (${Math.floor(diffDays)} kun o'tdi)`,
-        });
+      if (!orderSales || orderSales.length === 0) {
+        throw new Error("Buyurtma topilmadi");
       }
-    }
 
-    // Qaytariladigan itemlarni aniqlash
-    let salesToReturn;
+      // Hammasi allaqachon qaytarilganmi?
+      const allReturned = orderSales.every((s) => s.status === "returned");
+      if (allReturned) {
+        throw new Error("Bu buyurtma allaqachon qaytarilgan");
+      }
+
+      const firstSale = orderSales[0];
+      isCustomer = !!firstSale.customer;
+      customerType = isCustomer ? "customer" : "noname";
+
+      // ── 1-tur: Noname → 7 kun limit ──────────────────────────────────
+      if (!isCustomer) {
+        const diffDays =
+          (Date.now() - new Date(firstSale.timestamp).getTime()) /
+          (1000 * 60 * 60 * 24);
+
+        if (diffDays > NONAME_RETURN_DAYS) {
+          throw new Error(
+            `Qaytarish muddati o'tib ketdi. Bir martalik mijoz uchun ${NONAME_RETURN_DAYS} kun ichida qaytarish mumkin (${Math.floor(diffDays)} kun o'tdi)`,
+          );
+        }
+      }
+
+      // Qaytariladigan itemlarni aniqlash
+      let salesToReturn;
 
     if (items && Array.isArray(items) && items.length > 0) {
       // Qisman qaytarish
@@ -331,14 +349,12 @@ router.post("/return", async (req, res) => {
         .map((s) => ({ sale: s, returnQty: s.quantity }));
     }
 
-    if (salesToReturn.length === 0) {
-      return res.status(400).json({ error: "Qaytariladigan mahsulot topilmadi" });
-    }
+      if (salesToReturn.length === 0) {
+        throw new Error("Qaytariladigan mahsulot topilmadi");
+      }
 
-    let totalCashBack = 0;   // naqd qaytariladigan summa
-    let totalDebtCut = 0;    // qarzdan ayiriladigan summa
 
-    await session.withTransaction(async () => {
+
       for (const { sale, returnQty } of salesToReturn) {
         const isFullReturn = returnQty === sale.quantity;
         const ratio = returnQty / sale.quantity;
@@ -431,7 +447,7 @@ router.post("/return", async (req, res) => {
 
     res.json({
       message: "Qaytarish muvaffaqiyatli amalga oshirildi",
-      customerType: isCustomer ? "customer" : "noname",
+      customerType,
       returnType: isCustomer ? returnType : "cash",
       cashBack: totalCashBack,
       debtReduced: totalDebtCut,

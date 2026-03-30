@@ -7,6 +7,8 @@ const Payment = require("../models/Payment");
 const SaleService = require("../utils/saleService");
 const { authenticate, isSeller } = require("../middleware/auth");
 
+const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
+
 router.use(authenticate);
 router.use(isSeller);
 
@@ -31,6 +33,10 @@ router.get("/", async (req, res) => {
 // 2. Mijoz detail + xaridlar tarixi
 router.get("/:id", async (req, res) => {
   try {
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({ error: "Invalid customer ID format" });
+    }
+
     const customer = await Customer.findOne({
       _id: req.params.id,
       seller: req.user._id,
@@ -72,26 +78,33 @@ router.get("/:id", async (req, res) => {
         quantity: sale.quantity,
         price: sale.price,
         totalAmount: sale.totalAmount,
+        status: sale.status,
       });
 
-      // Cent bilan yig'ish — keyin dollarga o'tkazamiz
-      groupsMap[key].totalAmount = SaleService.toDollar(
-        SaleService.toCents(groupsMap[key].totalAmount) +
-          SaleService.toCents(sale.totalAmount),
-      );
-      groupsMap[key].paidAmount = SaleService.toDollar(
-        SaleService.toCents(groupsMap[key].paidAmount) +
-          SaleService.toCents(sale.paidAmount),
-      );
-      groupsMap[key].debt = SaleService.toDollar(
-        SaleService.toCents(groupsMap[key].debt) +
-          SaleService.toCents(sale.debt || 0),
-      );
+      // Qaytarilgan itemlar summaga qo'shilmaydi (consistent with admin.js)
+      if (sale.status !== "returned") {
+        groupsMap[key].totalAmount = SaleService.toDollar(
+          SaleService.toCents(groupsMap[key].totalAmount) +
+            SaleService.toCents(sale.totalAmount),
+        );
+        groupsMap[key].paidAmount = SaleService.toDollar(
+          SaleService.toCents(groupsMap[key].paidAmount) +
+            SaleService.toCents(sale.paidAmount),
+        );
+        groupsMap[key].debt = SaleService.toDollar(
+          SaleService.toCents(groupsMap[key].debt) +
+            SaleService.toCents(sale.debt || 0),
+        );
+      }
+      groupsMap[key].discountPercent = sale.discountPercent || 0;
     }
 
-    const orders = Object.values(groupsMap).sort(
-      (a, b) => new Date(b.timestamp) - new Date(a.timestamp),
-    );
+    const orders = Object.values(groupsMap)
+      .map((group) => {
+        const allReturned = group.items.every((i) => i.status === "returned");
+        return { ...group, status: allReturned ? "returned" : group.status };
+      })
+      .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 
     const payments = await Payment.find({
       customer: customer._id,
@@ -108,32 +121,39 @@ router.get("/:id", async (req, res) => {
 router.post("/:id/payment", async (req, res) => {
   const session = await mongoose.startSession();
   try {
-    const { amount, notes } = req.body;
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({ error: "Invalid customer ID format" });
+    }
 
-    if (!amount || amount <= 0) {
+    const { amount, notes } = req.body;
+    const parsedAmount = Number(amount);
+
+    if (!amount || isNaN(parsedAmount) || parsedAmount <= 0) {
       return res.status(400).json({ error: "To'lov summasi noto'g'ri" });
     }
 
-    const customer = await Customer.findOne({
-      _id: req.params.id,
-      seller: req.user._id,
-    });
-
-    if (!customer) {
-      return res.status(404).json({ error: "Mijoz topilmadi" });
-    }
-
-    // Cent bilan tekshirish
-    const amountCents = SaleService.toCents(Number(amount));
-    const totalDebtCents = SaleService.toCents(customer.totalDebt);
-
-    if (amountCents > totalDebtCents) {
-      return res.status(400).json({
-        error: `Qarz ${customer.totalDebt}$ dan ko'p to'lab bo'lmaydi`,
-      });
-    }
+    const amountCents = SaleService.toCents(parsedAmount);
+    let updatedTotalDebt = 0;
 
     await session.withTransaction(async () => {
+      // Fetch customer INSIDE transaction to prevent race conditions
+      const customer = await Customer.findOne({
+        _id: req.params.id,
+        seller: req.user._id,
+      }).session(session);
+
+      if (!customer) {
+        throw new Error("Mijoz topilmadi");
+      }
+
+      const totalDebtCents = SaleService.toCents(customer.totalDebt);
+
+      if (amountCents > totalDebtCents) {
+        throw new Error(
+          `Qarz ${customer.totalDebt}$ dan ko'p to'lab bo'lmaydi`,
+        );
+      }
+
       // Payment yaratish
       await Payment.create(
         [
@@ -149,6 +169,7 @@ router.post("/:id/payment", async (req, res) => {
 
       // Customer qarzini kamaytirish
       const newTotalDebt = SaleService.toDollar(totalDebtCents - amountCents);
+      updatedTotalDebt = newTotalDebt;
       await Customer.findByIdAndUpdate(
         customer._id,
         { $set: { totalDebt: newTotalDebt } },
@@ -192,11 +213,9 @@ router.post("/:id/payment", async (req, res) => {
       }
     });
 
-    const updatedCustomer = await Customer.findById(customer._id);
-
     res.status(201).json({
       message: "To'lov qabul qilindi",
-      totalDebt: updatedCustomer.totalDebt,
+      totalDebt: updatedTotalDebt,
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -208,6 +227,10 @@ router.post("/:id/payment", async (req, res) => {
 // 4. To'lovlar tarixi
 router.get("/:id/payments", async (req, res) => {
   try {
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({ error: "Invalid customer ID format" });
+    }
+
     const customer = await Customer.findOne({
       _id: req.params.id,
       seller: req.user._id,
