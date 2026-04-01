@@ -14,15 +14,89 @@ const SellerStock = require("../models/SellerStock");
 const exportConfig = require("../config/exportConfig");
 
 /**
+ * Translation dictionary for headers and worksheet names
+ */
+const UZ_TRANSLATIONS = {
+  // Worksheet Names
+  Users: "Foydalanuvchilar",
+  Categories: "Kategoriyalar",
+  Products: "Mahsulotlar",
+  Sales: "Sotuvlar",
+  Transfers: "O'tkazmalar",
+  SellerProducts: "Sotuvchi mahsulotlari",
+  SellerStock: "Sotuvchi ombori",
+  Summary: "Xulosa",
+
+  // Field Names
+  username: "Foydalanuvchi nomi",
+  firstName: "Ism",
+  lastName: "Familiya",
+  phoneNumber: "Telefon raqami",
+  role: "Rol",
+  isActive: "Faolmi",
+  createdAt: "Yaratilgan vaqti",
+  updatedAt: "Yangilangan vaqti",
+  name: "Nomi",
+  sku: "Artikul (SKU)",
+  price: "Narxi",
+  costPrice: "Tan narxi",
+  category: "Kategoriya",
+  warehouseQuantity: "Ombor qoldig'i",
+  description: "Izoh",
+  seller: "Sotuvchi",
+  product: "Mahsulot",
+  quantity: "Miqdori",
+  totalAmount: "Jami summa",
+  paidAmount: "To'langan summa",
+  debt: "Qarz",
+  timestamp: "Vaqt",
+  type: "Turi",
+  status: "Holati",
+};
+
+/**
+ * Format date to user friendly format (Asia/Tashkent)
+ */
+const formatDateTime = (date) => {
+  if (!date) return "";
+  const d = new Date(date);
+  if (isNaN(d.getTime())) return date;
+
+  return d.toLocaleString("uz-UZ", {
+    timeZone: "Asia/Tashkent",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+};
+
+/**
  * Format cell value for Excel
  */
 const formatCellValue = (value) => {
   if (value === null || value === undefined) return "";
-  if (value instanceof Date) return value.toISOString();
+
+  // Format Dates
+  if (value instanceof Date || (typeof value === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(value))) {
+    return formatDateTime(value);
+  }
+
+  // Format Booleans
+  if (typeof value === "boolean") {
+    return value ? "Ha" : "Yo'q";
+  }
+
   if (mongoose.Types.ObjectId.isValid(value) && typeof value === "object") {
     return value.toString();
   }
-  if (typeof value === "object") return JSON.stringify(value);
+
+  if (typeof value === "object" && !Array.isArray(value)) {
+    return JSON.stringify(value);
+  }
+
   return value;
 };
 
@@ -46,9 +120,9 @@ const styleHeaderRow = (worksheet) => {
  */
 const autoFitColumns = (worksheet) => {
   worksheet.columns.forEach((column) => {
-    let maxLength = 10;
+    let maxLength = 15; // Increased default
     column.eachCell({ includeEmpty: false }, (cell) => {
-      const cellLength = cell.value ? cell.value.toString().length : 10;
+      const cellLength = cell.value ? cell.value.toString().length : 15;
       if (cellLength > maxLength) {
         maxLength = cellLength;
       }
@@ -82,7 +156,8 @@ const exportModelToWorksheet = async (
   options = {},
 ) => {
   try {
-    console.log(`Exporting ${modelName}...`);
+    const translatedWorksheetName = UZ_TRANSLATIONS[modelName] || modelName;
+    console.log(`Exporting ${modelName} as ${translatedWorksheetName}...`);
 
     // Fetch data with population if needed
     let query = Model.find({});
@@ -107,7 +182,7 @@ const exportModelToWorksheet = async (
     }
 
     // Create worksheet
-    const worksheet = workbook.addWorksheet(modelName);
+    const worksheet = workbook.addWorksheet(translatedWorksheetName);
 
     // Get sensitive fields from config or use defaults
     const sensitiveFields = exportConfig.global?.defaultSensitiveFields || [
@@ -147,7 +222,7 @@ const exportModelToWorksheet = async (
     }
 
     const columns = fieldsToExport.map((key) => ({
-      header:
+      header: UZ_TRANSLATIONS[key] ||
         key.charAt(0).toUpperCase() +
         key
           .slice(1)
@@ -208,21 +283,21 @@ const exportModelToWorksheet = async (
  * Create summary worksheet
  */
 const createSummaryWorksheet = (workbook, stats) => {
-  const worksheet = workbook.addWorksheet("Summary", {
+  const worksheet = workbook.addWorksheet(UZ_TRANSLATIONS.Summary, {
     properties: { tabColor: { argb: "FF00FF00" } },
   });
 
   worksheet.columns = [
-    { header: "Collection", key: "collection", width: 30 },
-    { header: "Record Count", key: "count", width: 20 },
-    { header: "Export Date", key: "date", width: 25 },
+    { header: "Bo'lim", key: "collection", width: 30 },
+    { header: "Yozuvlar soni", key: "count", width: 20 },
+    { header: "Eksport sanasi", key: "date", width: 25 },
   ];
 
-  const exportDate = new Date().toLocaleString();
+  const exportDate = formatDateTime(new Date());
 
   stats.forEach((stat) => {
     worksheet.addRow({
-      collection: stat.name,
+      collection: UZ_TRANSLATIONS[stat.name] || stat.name,
       count: stat.count,
       date: exportDate,
     });
@@ -231,7 +306,7 @@ const createSummaryWorksheet = (workbook, stats) => {
   // Add total row
   const totalCount = stats.reduce((sum, stat) => sum + stat.count, 0);
   worksheet.addRow({
-    collection: "TOTAL",
+    collection: "JAMI",
     count: totalCount,
     date: "",
   });
