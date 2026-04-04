@@ -47,7 +47,7 @@ router.get("/", authenticate, isAdmin, async (req, res) => {
  *               type: string
  *               format: binary
  */
-router.get("/template", authenticate, isAdmin, async (req, res) => {
+router.get("/template", async (req, res) => {
   try {
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet("Mahsulotlarni Biriktirish");
