@@ -3,8 +3,7 @@ const mongoose = require("mongoose");
 const Sale = require("./models/Sale");
 const Customer = require("./models/Customer");
 
-const MONGO_URI =
-  "mongodb+srv://bilol09876_db_user:wNaPpcj2DQjpUSk3@cluster0.puw13ji.mongodb.net/?appName=Cluster0";
+const MONGO_URI = process.env.MONGO_URI;
 
 async function migrateOldSales() {
   try {
@@ -40,8 +39,8 @@ async function migrateOldSales() {
       // 2. Telefon va ism normalizatsiya
       let searchPhone =
         sale.customerPhone &&
-        sale.customerPhone.trim() !== "" &&
-        sale.customerPhone.trim() !== "+998"
+          sale.customerPhone.trim() !== "" &&
+          sale.customerPhone.trim() !== "+998"
           ? sale.customerPhone.trim()
           : "NOMALUM";
 
