@@ -190,7 +190,7 @@ if (require.main === module) {
   const command = process.argv[2];
 
   // Connect to MongoDB
-  mongoose.connect(process.env.MONGODB_URI || "mongodb://localhost:27017/telegram-bot", {
+  mongoose.connect(process.env.MONGO_URI || "mongodb://localhost:27017/telegram-bot", {
     useNewUrlParser: true,
     useUnifiedTopology: true,
   });
