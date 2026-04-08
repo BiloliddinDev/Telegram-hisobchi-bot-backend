@@ -47,15 +47,12 @@ router.get("/import/template", async (req, res) => {
 
     // Define columns
     worksheet.columns = [
-      { header: "Name (Required)", key: "name", width: 30 },
-      { header: "Price (Optional if auto-adjusting)", key: "price", width: 30 },
-      { header: "CostPrice (Required for auto-adjusting)", key: "costPrice", width: 35 },
-      { header: "Category (Required)", key: "category", width: 25 },
-      { header: "WarehouseQuantity", key: "warehouseQuantity", width: 18 },
-      { header: "SKU", key: "sku", width: 15 },
-      { header: "Color", key: "color", width: 15 },
-      { header: "Description", key: "description", width: 35 },
-      { header: "Image URL", key: "image", width: 30 },
+      { header: "Nomi (Majburiy)", key: "name", width: 30 },
+      { header: "Narxi (Ixtiyoriy - avtohisob)", key: "price", width: 30 },
+      { header: "Tan narxi (Avtohisob uchun majburiy)", key: "costPrice", width: 35 },
+      { header: "Kategoriya (Ixtiyoriy)", key: "category", width: 25 },
+      { header: "Ombor miqdori", key: "warehouseQuantity", width: 18 },
+      { header: "SKU (Artikul)", key: "sku", width: 15 },
     ];
 
     // Style headers
@@ -76,9 +73,6 @@ router.get("/import/template", async (req, res) => {
         category: "Smartphones",
         warehouseQuantity: 50,
         sku: "IP15PM-256",
-        color: "Qora",
-        description: "Asosiy parametrlar to'ldirilgan ideal misol",
-        image: "https://example.com/ip15.png",
       },
       {
         name: "Misol: AirPods Pro 2",
@@ -87,38 +81,24 @@ router.get("/import/template", async (req, res) => {
         category: "Naushniklar",
         warehouseQuantity: 100,
         sku: "APP2",
-        color: "Oq",
       },
       {
         name: "Misol: Oddiy Telefon Stenkasi",
         price: 15,
-        category: "Aksessuarlar",
-        // Qolgan maydonlar bo'sh (ixtiyoriy ekanligini ko'rsatish)
-        description: "Faqat majburiy maydonlar to'ldirilgan",
+        // Kategoriya bo'sh — avtomatik "Umumiy" ga tushadi
       },
       {
         name: "Misol: MacBook Air M2",
         price: 1100,
         costPrice: 950,
         category: "Noutbuklar",
-        warehouseQuantity: 0, // Nol miqdor namunasi
+        warehouseQuantity: 0,
         sku: "MBA-M2-S",
-        color: "Kumush",
       },
       {
-        name: "Misol: USB-C Kabel 1 metr",
-        price: 20,
-        costPrice: 5,
-        category: "Kabellar",
-        warehouseQuantity: 500,
-        sku: "CBL-1M",
-        color: "Oq",
-      },
-      {
-        name: "Misol: Auto-Price Case (No Price)",
+        name: "Misol: Narx avtohisob (Price bo'sh)",
         costPrice: 100,
         category: "Gadgets",
-        description: "Price ustuni bo'sh bo'lsa, sozlamalar bo'yicha hisoblanadi",
       },
     ]);
 
@@ -230,12 +210,9 @@ router.post(
         const name = rowData[1] ? String(rowData[1]).trim() : "";
         let price = rowData[2] !== undefined ? Number(rowData[2]) : NaN;
         const costPrice = Number(rowData[3]);
-        const categoryName = rowData[4] ? String(rowData[4]).trim() : "";
+        let categoryName = rowData[4] ? String(rowData[4]).trim() : "";
         const warehouseQuantity = Number(rowData[5]) || 0;
         const sku = rowData[6] ? String(rowData[6]).trim() : "";
-        const color = rowData[7] ? String(rowData[7]).trim() : "";
-        const description = rowData[8] ? String(rowData[8]).trim() : "";
-        const image = rowData[9] ? String(rowData[9]).trim() : "";
 
         // Auto-calculate Price if missing
         if (isNaN(price) && !isNaN(costPrice) && priceAdjustmentMode && !isNaN(adjustmentValue)) {
@@ -247,11 +224,16 @@ router.post(
           price = Math.round(price * 100) / 100; // Round to 2 decimals
         }
 
-        if (!name || isNaN(price) || !categoryName) {
+        // Kategoriya bo'sh bo'lsa "Umumiy" default category ga qo'shish
+        if (!categoryName) {
+          categoryName = "Umumiy";
+        }
+
+        if (!name || isNaN(price)) {
           errors.push({
             row: rowNum,
             message:
-              "Majburiy maydonlar (Name, Price yoki CostPrice+Settings, Category) to'liq emas yoki noto'g'ri turda",
+              "Majburiy maydonlar (Nomi, Narxi yoki Tan narxi+Sozlamalar) to'liq emas yoki noto'g'ri turda",
           });
           continue;
         }
@@ -265,9 +247,6 @@ router.post(
           categoryName,
           warehouseQuantity,
           sku,
-          color,
-          description,
-          image,
         });
       }
 
@@ -367,9 +346,6 @@ router.post(
               category: catId,
               warehouseQuantity: item.warehouseQuantity,
               sku: item.sku,
-              color: item.color,
-              description: item.description,
-              image: item.image,
               isActive: true,
             },
           },
@@ -441,9 +417,9 @@ router.get("/warehouse/template", async (req, res) => {
 
     // Define columns
     worksheet.columns = [
-      { header: "SKU (Required)", key: "sku", width: 25 },
-      { header: "Quantity (Required)", key: "quantity", width: 15 },
-      { header: "Status (Required: INC, DEC, SET)", key: "status", width: 30 },
+      { header: "SKU (Majburiy)", key: "sku", width: 25 },
+      { header: "Miqdor (Majburiy)", key: "quantity", width: 15 },
+      { header: "Holat (Majburiy: INC, DEC, SET)", key: "status", width: 30 },
     ];
 
     // Style headers
@@ -703,14 +679,11 @@ router.post("/", authenticate, isAdmin, validateProduct, async (req, res) => {
   try {
     const {
       name,
-      description,
       price,
       costPrice,
       category,
       warehouseQuantity,
-      image,
       sku,
-      color,
     } = req.body;
 
     if (!isValidObjectId(category)) {
@@ -725,14 +698,11 @@ router.post("/", authenticate, isAdmin, validateProduct, async (req, res) => {
 
     const product = await Product.create({
       name,
-      description,
       price,
       costPrice,
       category,
       warehouseQuantity,
-      image,
       sku,
-      color,
     });
 
     res.status(201).json({ product });
@@ -750,14 +720,11 @@ router.put("/:id", authenticate, isAdmin, validateProduct, async (req, res) => {
 
     const {
       name,
-      description,
       price,
       costPrice,
       category,
       warehouseQuantity,
-      image,
       sku,
-      color,
       isActive,
     } = req.body;
 
@@ -775,14 +742,11 @@ router.put("/:id", authenticate, isAdmin, validateProduct, async (req, res) => {
       req.params.id,
       {
         name,
-        description,
         price,
         costPrice,
         category,
         warehouseQuantity,
-        image,
         sku,
-        color,
         isActive,
       },
       { new: true, runValidators: true },
@@ -807,14 +771,11 @@ router.patch("/:id", authenticate, isAdmin, async (req, res) => {
 
     const allowedFields = [
       "name",
-      "description",
       "price",
       "costPrice",
       "category",
       "warehouseQuantity",
-      "image",
       "sku",
-      "color",
       "isActive",
     ];
 

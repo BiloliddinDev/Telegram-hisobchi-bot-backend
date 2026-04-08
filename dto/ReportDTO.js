@@ -38,34 +38,36 @@ class ReportDTO {
       0,
     );
 
-    // 3. Savdo statistikasi — CENT bilan
-    const totalSales = sales.length;
-    const totalSalesQuantity = sales.reduce(
+    // 3. Savdo statistikasi — qaytarilganlarni chiqarib tashlash
+    const totalReturned = sales.filter((s) => s.status === "returned").length;
+    const activeSales = sales.filter((s) => s.status !== "returned");
+
+    const totalSales = activeSales.length;
+    const totalSalesQuantity = activeSales.reduce(
       (sum, sale) => sum + (sale.quantity || 0),
       0,
     );
 
-    // Jami sotuv (qarz + naqd)
-    const totalRevenueCents = sales.reduce(
+    // Jami sotuv (qarz + naqd) — faqat aktiv sotuvlar
+    const totalRevenueCents = activeSales.reduce(
       (sum, sale) => sum + SaleService.toCents(sale.totalAmount || 0),
       0,
     );
 
     // Naqd tushum (qo'lda bor pul)
-    const totalPaidCents = sales.reduce(
+    const totalPaidCents = activeSales.reduce(
       (sum, sale) => sum + SaleService.toCents(sale.paidAmount || 0),
       0,
     );
 
     // Qarzlar (hali olinmagan)
-    const totalDebtCents = sales.reduce(
+    const totalDebtCents = activeSales.reduce(
       (sum, sale) => sum + SaleService.toCents(sale.debt || 0),
       0,
     );
 
-    // ✅ Tan narx — faqat sale.costPrice > 0 bo'lsa
-    // Eski sotuvlarda costPrice yo'q → 0 qilib hisoblaymiz (xato chiqmaydi)
-    const totalSoldCostCents = sales.reduce((sum, sale) => {
+    // Tan narx — faqat sale.costPrice > 0 bo'lsa
+    const totalSoldCostCents = activeSales.reduce((sum, sale) => {
       const costPrice = sale.costPrice > 0 ? sale.costPrice : 0;
       return sum + SaleService.toCents((sale.quantity || 0) * costPrice);
     }, 0);
@@ -74,10 +76,10 @@ class ReportDTO {
     const totalProfitCents = totalPaidCents - totalSoldCostCents;
 
     const uniqueSellers = new Set(
-      sales.map((s) => s.seller?._id?.toString()).filter(Boolean),
+      activeSales.map((s) => s.seller?._id?.toString()).filter(Boolean),
     );
     const uniqueProducts = new Set(
-      sales.map((s) => s.product?._id?.toString()).filter(Boolean),
+      activeSales.map((s) => s.product?._id?.toString()).filter(Boolean),
     );
 
     const totalRevenue = SaleService.toDollar(totalRevenueCents);
@@ -108,6 +110,7 @@ class ReportDTO {
       },
       sales: {
         totalSales,
+        totalReturned,
         totalRevenue,
         totalPaid,
         totalDebt,

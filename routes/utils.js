@@ -189,12 +189,10 @@ async function getAssignedStocks(isActiveInclude = null) {
         product: {
           _id: "$product._id",
           name: "$product.name",
-          description: "$product.description",
           sku: "$product.sku",
           price: "$product.price",
           costPrice: "$product.costPrice",
           warehouseQuantity: "$product.warehouseQuantity",
-          image: "$product.image",
           isActive: "$product.isActive",
         },
         assignment: {
@@ -269,12 +267,10 @@ async function getActiveAssignedStocksForSeller(sellerId) {
         product: {
           _id: "$product._id",
           name: "$product.name",
-          description: "$product.description",
           sku: "$product.sku",
           price: "$product.price",
           costPrice: "$product.costPrice",
           warehouseQuantity: "$product.warehouseQuantity",
-          image: "$product.image",
           isActive: "$product.isActive",
         },
         assignment: {

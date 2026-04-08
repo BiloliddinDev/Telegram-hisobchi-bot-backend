@@ -37,7 +37,7 @@ module.exports = {
   // Product model export configuration
   products: {
     select:
-      "name sku price costPrice category warehouseQuantity description createdAt updatedAt",
+      "name sku price costPrice category warehouseQuantity createdAt updatedAt",
     excludeFields: [],
     populate: [{ path: "category", select: "name" }],
   },
