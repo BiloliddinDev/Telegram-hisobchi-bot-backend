@@ -95,14 +95,14 @@
  *       **Behavior:**
  *       - Validates that the specified category exists
  *       - Creates product with initial warehouse quantity
- *       - All fields except image, sku, color, and description are required
+ *       - All fields except sku are required
  *       - Product is created as active by default
  *
  *       **Use Cases:**
  *       - Add new product to inventory system
  *       - Set initial warehouse stock for new products
  *       - Link products to existing categories
- *       - Track products with SKU and color variants
+ *       - Track products with SKU
  *
  *       **Validation:**
  *       - Category must exist in the system
@@ -128,10 +128,6 @@
  *                 description: Product name (required)
  *                 example: "Nike Air Max"
  *                 minLength: 1
- *               description:
- *                 type: string
- *                 description: Product description (optional)
- *                 example: "Comfortable running shoes"
  *               price:
  *                 type: number
  *                 description: Selling price (required, must be positive)
@@ -151,18 +147,10 @@
  *                 description: Initial warehouse stock (required, must be non-negative)
  *                 example: 100
  *                 minimum: 0
- *               image:
- *                 type: string
- *                 description: Product image URL (optional)
- *                 example: "https://example.com/image.jpg"
  *               sku:
  *                 type: string
  *                 description: Product SKU - Stock Keeping Unit (optional)
  *                 example: "NAM-001"
- *               color:
- *                 type: string
- *                 description: Product color (optional)
- *                 example: "Black"
  *           examples:
  *             basicProduct:
  *               summary: Basic product with required fields only
@@ -176,14 +164,11 @@
  *               summary: Complete product with all fields
  *               value:
  *                 name: "Nike Air Max 90"
- *                 description: "Classic sneaker with Air cushioning technology"
  *                 price: 150000
  *                 costPrice: 100000
  *                 category: "507f1f77bcf86cd799439011"
  *                 warehouseQuantity: 100
- *                 image: "https://example.com/images/nike-air-max-90.jpg"
  *                 sku: "NAM90-BLK-42"
- *                 color: "Black"
  *     responses:
  *       201:
  *         description: Product created successfully
@@ -201,16 +186,13 @@
  *                   product:
  *                     _id: "507f1f77bcf86cd799439012"
  *                     name: "Nike Air Max"
- *                     description: "Comfortable running shoes"
  *                     price: 150000
  *                     costPrice: 100000
  *                     category:
  *                       _id: "507f1f77bcf86cd799439011"
  *                       name: "Shoes"
  *                     warehouseQuantity: 100
- *                     image: "https://example.com/image.jpg"
  *                     sku: "NAM-001"
- *                     color: "Black"
  *                     isActive: true
  *       400:
  *         description: Bad request - Invalid input or category not found
@@ -335,9 +317,6 @@
  *                 type: string
  *                 description: Product name (required)
  *                 minLength: 1
- *               description:
- *                 type: string
- *                 description: Product description
  *               price:
  *                 type: number
  *                 description: Selling price (required)
@@ -353,15 +332,9 @@
  *                 type: number
  *                 description: Warehouse stock (required)
  *                 minimum: 0
- *               image:
- *                 type: string
- *                 description: Product image URL
  *               sku:
  *                 type: string
  *                 description: Product SKU
- *               color:
- *                 type: string
- *                 description: Product color
  *               isActive:
  *                 type: boolean
  *                 description: Product active status
@@ -370,14 +343,11 @@
  *               summary: Complete product update
  *               value:
  *                 name: "Nike Air Max 90 Updated"
- *                 description: "Updated description with new features"
  *                 price: 160000
  *                 costPrice: 110000
  *                 category: "507f1f77bcf86cd799439011"
  *                 warehouseQuantity: 150
- *                 image: "https://example.com/updated-image.jpg"
  *                 sku: "NAM90-UPD-001"
- *                 color: "White"
  *                 isActive: true
  *     responses:
  *       200:

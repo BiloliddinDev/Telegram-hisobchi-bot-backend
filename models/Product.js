@@ -7,10 +7,6 @@ const ProductSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
-    description: {
-      type: String,
-      default: "",
-    },
     price: {
       type: Number,
       required: true,
@@ -31,19 +27,11 @@ const ProductSchema = new mongoose.Schema(
       default: "",
       index: true,
     },
-    color: {
-      type: String,
-      default: "",
-    },
     warehouseQuantity: {
       type: Number,
       required: true,
       default: 0,
       min: 0,
-    },
-    image: {
-      type: String,
-      default: "",
     },
     isActive: {
       type: Boolean,
