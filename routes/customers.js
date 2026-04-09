@@ -4,6 +4,7 @@ const mongoose = require("mongoose");
 const Customer = require("../models/Customer");
 const Sale = require("../models/Sale");
 const Payment = require("../models/Payment");
+const CashTransaction = require("../models/CashTransaction");
 const SaleService = require("../utils/saleService");
 const { authenticate, isSeller } = require("../middleware/auth");
 
@@ -167,6 +168,19 @@ router.post("/:id/payment", async (req, res) => {
         { session },
       );
 
+      // Kassaga to'lov yozish
+      await CashTransaction.create(
+        [
+          {
+            type: "in",
+            amount: SaleService.toDollar(amountCents),
+            description: `Mijoz to'lovi: ${customer.name}`,
+            performedBy: req.user._id,
+          },
+        ],
+        { session },
+      );
+
       // Customer qarzini kamaytirish
       const newTotalDebt = SaleService.toDollar(totalDebtCents - amountCents);
       updatedTotalDebt = newTotalDebt;
@@ -218,7 +232,8 @@ router.post("/:id/payment", async (req, res) => {
       totalDebt: updatedTotalDebt,
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    const status = error.message.includes("topilmadi") || error.message.includes("ko'p") ? 400 : 500;
+    res.status(status).json({ error: error.message });
   } finally {
     await session.endSession();
   }

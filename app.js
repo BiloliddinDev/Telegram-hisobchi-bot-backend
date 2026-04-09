@@ -44,6 +44,7 @@ app.use("/api/categories", require("./routes/categories"));
 app.use("/api/sales", require("./routes/sales"));
 app.use("/api/seller", require("./routes/seller"));
 app.use("/api/admin", require("./routes/admin"));
+app.use("/api/admin/cash", require("./routes/cash"));
 app.use("/api/analytics", require("./routes/analytics"));
 app.use("/api/transfers", require("./routes/transfers"));
 app.use("/api/export", require("./routes/export"));
