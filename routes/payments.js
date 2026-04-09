@@ -3,6 +3,7 @@ const router = express.Router();
 const Payment = require("../models/Payment");
 const Sale = require("../models/Sale");
 const Customer = require("../models/Customer");
+const CashTransaction = require("../models/CashTransaction");
 const { authenticate, isSeller } = require("../middleware/auth");
 const mongoose = require("mongoose");
 const SaleService = require("../utils/saleService");
@@ -81,6 +82,19 @@ router.post("/", async (req, res) => {
         await sale.save({ session });
       }
 
+      // Kassaga to'lov yozish
+      await CashTransaction.create(
+        [
+          {
+            type: "in",
+            amount: SaleService.toDollar(amountCents),
+            description: `To'lov: ${orderId}`,
+            performedBy: req.user._id,
+          },
+        ],
+        { session },
+      );
+
       // Customer totalDebt yangilash (safe: compute exact new value, floor at 0)
       if (sales[0].customer) {
         const customer = await Customer.findById(sales[0].customer).session(
@@ -102,7 +116,8 @@ router.post("/", async (req, res) => {
 
     res.status(201).json({ message: "To'lov qabul qilindi" });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    const status = error.message.includes("topilmadi") || error.message.includes("ko'p") ? 400 : 500;
+    res.status(status).json({ error: error.message });
   } finally {
     await session.endSession();
   }

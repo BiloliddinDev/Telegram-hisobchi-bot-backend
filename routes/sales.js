@@ -4,6 +4,7 @@ const mongoose = require("mongoose");
 const Sale = require("../models/Sale");
 const SellerStock = require("../models/SellerStock");
 const Customer = require("../models/Customer");
+const CashTransaction = require("../models/CashTransaction");
 const { authenticate, isSeller } = require("../middleware/auth");
 const SaleService = require("../utils/saleService");
 
@@ -114,10 +115,17 @@ router.post("/batch", async (req, res) => {
           product: productId,
         })
           .session(session)
-          .populate("product", "costPrice");
+          .populate("product", "name costPrice");
 
-        if (!sellerStock || sellerStock.quantity < quantity) {
-          throw new Error(`Mahsulot yetarli emas: ${productId}`);
+        if (!sellerStock) {
+          throw new Error(`Mahsulot omborda topilmadi`);
+        }
+
+        if (sellerStock.quantity < quantity) {
+          const productName = sellerStock.product?.name || productId;
+          throw new Error(
+            `"${productName}" yetarli emas. Omborda: ${sellerStock.quantity} dona, siz: ${quantity} dona`,
+          );
         }
 
         // Sale yaratish
@@ -154,6 +162,22 @@ router.post("/batch", async (req, res) => {
           { session },
         );
       }
+
+      // Kassaga naqd tushum yozish (agar to'lov bo'lsa)
+      const paidCents = SaleService.toCents(paid);
+      if (paidCents > 0) {
+        await CashTransaction.create(
+          [
+            {
+              type: "in",
+              amount: Number(paid),
+              description: `Sotuv: ${orderId}`,
+              performedBy: req.user._id,
+            },
+          ],
+          { session },
+        );
+      }
     });
 
     // Javob
@@ -168,7 +192,8 @@ router.post("/batch", async (req, res) => {
     });
   } catch (error) {
     console.error("Batch sotuv xatosi:", error);
-    res.status(500).json({ error: error.message });
+    const status = error.message.includes("yetarli") || error.message.includes("topilmadi") ? 400 : 500;
+    res.status(status).json({ error: error.message });
   } finally {
     await session.endSession();
   }
@@ -417,6 +442,22 @@ router.post("/return", async (req, res) => {
         }
       }
 
+      // Kassadan naqd qaytarish yozish
+      const cashBackCents = SaleService.toCents(totalCashBack);
+      if (cashBackCents > 0) {
+        await CashTransaction.create(
+          [
+            {
+              type: "out",
+              amount: Number(totalCashBack),
+              description: `Qaytarish: ${orderId}`,
+              performedBy: req.user._id,
+            },
+          ],
+          { session },
+        );
+      }
+
       // ── Doimiy mijoz: Customer.totalDebt ni yangilash ──────────────
       if (isCustomer) {
         const debtToReduce =
@@ -454,7 +495,8 @@ router.post("/return", async (req, res) => {
     });
   } catch (error) {
     console.error("Qaytarish xatosi:", error);
-    res.status(500).json({ error: error.message });
+    const status = error.message.includes("topilmadi") || error.message.includes("allaqachon") || error.message.includes("muddati") ? 400 : 500;
+    res.status(status).json({ error: error.message });
   } finally {
     await session.endSession();
   }

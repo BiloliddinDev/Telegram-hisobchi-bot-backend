@@ -1,0 +1,203 @@
+const express = require("express");
+const router = express.Router();
+const mongoose = require("mongoose");
+const CashTransaction = require("../models/CashTransaction");
+const { authenticate, isAdmin } = require("../middleware/auth");
+const SaleService = require("../utils/saleService");
+
+router.use(authenticate);
+router.use(isAdmin);
+
+// Get cash balance and summary
+router.get("/balance", async (req, res) => {
+  try {
+    const { start, end } = req.query;
+
+    const match = {};
+    if (start && end) {
+      match.createdAt = {
+        $gte: new Date(`${start}T00:00:00.000Z`),
+        $lte: new Date(`${end}T23:59:59.999Z`),
+      };
+    }
+
+    const result = await CashTransaction.aggregate([
+      { $match: match },
+      {
+        $group: {
+          _id: "$type",
+          total: { $sum: "$amount" },
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+
+    let totalIn = 0;
+    let totalOut = 0;
+    let countIn = 0;
+    let countOut = 0;
+
+    for (const r of result) {
+      if (r._id === "in") {
+        totalIn = r.total;
+        countIn = r.count;
+      } else if (r._id === "out") {
+        totalOut = r.total;
+        countOut = r.count;
+      }
+    }
+
+    const balanceCents =
+      SaleService.toCents(totalIn) - SaleService.toCents(totalOut);
+
+    res.json({
+      balance: SaleService.toDollar(balanceCents),
+      totalIn: SaleService.toDollar(SaleService.toCents(totalIn)),
+      totalOut: SaleService.toDollar(SaleService.toCents(totalOut)),
+      countIn,
+      countOut,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get transactions list
+router.get("/transactions", async (req, res) => {
+  try {
+    const { start, end, type, page = 1, limit = 50 } = req.query;
+
+    const query = {};
+
+    if (start && end) {
+      query.createdAt = {
+        $gte: new Date(`${start}T00:00:00.000Z`),
+        $lte: new Date(`${end}T23:59:59.999Z`),
+      };
+    }
+
+    if (type && (type === "in" || type === "out")) {
+      query.type = type;
+    }
+
+    const skip = (Number(page) - 1) * Number(limit);
+
+    const [transactions, total] = await Promise.all([
+      CashTransaction.find(query)
+        .populate("performedBy", "username firstName lastName role")
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(Number(limit)),
+      CashTransaction.countDocuments(query),
+    ]);
+
+    res.json({
+      transactions,
+      pagination: {
+        total,
+        page: Number(page),
+        limit: Number(limit),
+        pages: Math.ceil(total / Number(limit)),
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Withdraw cash (admin takes money)
+router.post("/withdraw", async (req, res) => {
+  try {
+    const { amount, description } = req.body;
+
+    if (!amount || amount <= 0) {
+      return res.status(400).json({ error: "Summa 0 dan katta bo'lishi kerak" });
+    }
+
+    if (!description || description.trim().length === 0) {
+      return res
+        .status(400)
+        .json({ error: "Izoh yozish majburiy" });
+    }
+
+    // Kassa balansini tekshirish
+    const totals = await CashTransaction.aggregate([
+      {
+        $group: {
+          _id: "$type",
+          total: { $sum: "$amount" },
+        },
+      },
+    ]);
+
+    let totalIn = 0;
+    let totalOut = 0;
+    for (const t of totals) {
+      if (t._id === "in") totalIn = t.total;
+      else if (t._id === "out") totalOut = t.total;
+    }
+
+    const currentBalanceCents =
+      SaleService.toCents(totalIn) - SaleService.toCents(totalOut);
+    const withdrawCents = SaleService.toCents(amount);
+
+    if (withdrawCents > currentBalanceCents) {
+      const currentBalance = SaleService.toDollar(currentBalanceCents);
+      return res.status(400).json({
+        error: `Kassada yetarli mablag' yo'q. Kassa balansi: ${currentBalance}$`,
+      });
+    }
+
+    const transaction = await CashTransaction.create({
+      type: "out",
+      amount: Number(SaleService.toDollar(SaleService.toCents(amount))),
+      description: description.trim(),
+      performedBy: req.user._id,
+    });
+
+    await transaction.populate(
+      "performedBy",
+      "username firstName lastName role",
+    );
+
+    res.status(201).json({
+      message: "Kassadan pul muvaffaqiyatli olindi",
+      transaction,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Delete transaction (for corrections)
+router.delete("/transactions/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ error: "Noto'g'ri ID format" });
+    }
+
+    const transaction = await CashTransaction.findById(id);
+
+    if (!transaction) {
+      return res.status(404).json({ error: "Tranzaksiya topilmadi" });
+    }
+
+    // Faqat 'out' (admin olgan pul) tranzaksiyalarni o'chirish mumkin
+    if (transaction.type === "in") {
+      return res.status(400).json({
+        error:
+          "Kirim tranzaksiyasini o'chirish mumkin emas. Faqat chiqim (pul olish) o'chiriladi.",
+      });
+    }
+
+    await CashTransaction.findByIdAndDelete(id);
+
+    res.json({ message: "Tranzaksiya o'chirildi" });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+module.exports = router;

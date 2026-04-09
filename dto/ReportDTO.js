@@ -1,5 +1,6 @@
 const SaleService = require("../utils/saleService");
 const Customer = require("../models/Customer");
+const CashTransaction = require("../models/CashTransaction");
 
 class ReportDTO {
   constructor(
@@ -9,10 +10,12 @@ class ReportDTO {
     startDate,
     endDate,
     debts = {},
+    kassa = {},
   ) {
     this.period = { startDate, endDate };
     this.summary = this._calculateSummary(sales, products, sellerStocks);
     this.debts = debts;
+    this.kassa = kassa;
   }
 
   _calculateSummary(sales, products, sellerStocks) {
@@ -170,6 +173,32 @@ class ReportDTO {
       ),
     };
 
+    // Kassa balansi hisoblash
+    const cashResult = await CashTransaction.aggregate([
+      {
+        $group: {
+          _id: "$type",
+          total: { $sum: "$amount" },
+        },
+      },
+    ]);
+
+    let cashTotalIn = 0;
+    let cashTotalOut = 0;
+    for (const r of cashResult) {
+      if (r._id === "in") cashTotalIn = r.total;
+      else if (r._id === "out") cashTotalOut = r.total;
+    }
+
+    const kassaBalanceCents =
+      SaleService.toCents(cashTotalIn) - SaleService.toCents(cashTotalOut);
+
+    const kassa = {
+      balance: SaleService.toDollar(kassaBalanceCents),
+      totalIn: SaleService.toDollar(SaleService.toCents(cashTotalIn)),
+      totalOut: SaleService.toDollar(SaleService.toCents(cashTotalOut)),
+    };
+
     return new ReportDTO(
       sales,
       products,
@@ -177,6 +206,7 @@ class ReportDTO {
       startDate,
       endDate,
       debts,
+      kassa,
     );
   }
 
@@ -185,6 +215,7 @@ class ReportDTO {
       period: this.period,
       summary: this.summary,
       debts: this.debts,
+      kassa: this.kassa,
     };
   }
 }
