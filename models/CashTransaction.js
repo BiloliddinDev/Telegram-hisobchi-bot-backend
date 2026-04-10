@@ -3,7 +3,7 @@ const mongoose = require("mongoose");
 const cashTransactionSchema = new mongoose.Schema({
   type: {
     type: String,
-    enum: ["in", "out"],
+    enum: ["in", "out", "rashot", "oylik"],
     required: true,
   },
   amount: {
@@ -23,6 +23,11 @@ const cashTransactionSchema = new mongoose.Schema({
   relatedSale: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "Sale",
+    default: null,
+  },
+  relatedSeller: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "User",
     default: null,
   },
   createdAt: {

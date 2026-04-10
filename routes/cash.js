@@ -34,6 +34,8 @@ router.get("/balance", async (req, res) => {
 
     let totalIn = 0;
     let totalOut = 0;
+    let totalRashot = 0;
+    let totalOylik = 0;
     let countIn = 0;
     let countOut = 0;
 
@@ -44,16 +46,25 @@ router.get("/balance", async (req, res) => {
       } else if (r._id === "out") {
         totalOut = r.total;
         countOut = r.count;
+      } else if (r._id === "rashot") {
+        totalRashot = r.total;
+      } else if (r._id === "oylik") {
+        totalOylik = r.total;
       }
     }
 
     const balanceCents =
       SaleService.toCents(totalIn) - SaleService.toCents(totalOut);
+    const adminPocketCents =
+      SaleService.toCents(totalOut) -
+      SaleService.toCents(totalRashot) -
+      SaleService.toCents(totalOylik);
 
     res.json({
       balance: SaleService.toDollar(balanceCents),
       totalIn: SaleService.toDollar(SaleService.toCents(totalIn)),
       totalOut: SaleService.toDollar(SaleService.toCents(totalOut)),
+      adminPocket: SaleService.toDollar(adminPocketCents),
       countIn,
       countOut,
     });
@@ -76,7 +87,7 @@ router.get("/transactions", async (req, res) => {
       };
     }
 
-    if (type && (type === "in" || type === "out")) {
+    if (type && ["in", "out", "rashot", "oylik"].includes(type)) {
       query.type = type;
     }
 
@@ -85,6 +96,7 @@ router.get("/transactions", async (req, res) => {
     const [transactions, total] = await Promise.all([
       CashTransaction.find(query)
         .populate("performedBy", "username firstName lastName role")
+        .populate("relatedSeller", "firstName lastName username")
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(Number(limit)),
@@ -162,6 +174,75 @@ router.post("/withdraw", async (req, res) => {
 
     res.status(201).json({
       message: "Kassadan pul muvaffaqiyatli olindi",
+      transaction,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Admin hamyonidan xarajat (rashot / oylik)
+router.post("/spend", async (req, res) => {
+  try {
+    const { amount, type, description, sellerId } = req.body;
+
+    if (!amount || amount <= 0) {
+      return res.status(400).json({ error: "Summa 0 dan katta bo'lishi kerak" });
+    }
+
+    if (!type || !["rashot", "oylik"].includes(type)) {
+      return res.status(400).json({ error: "Tur 'rashot' yoki 'oylik' bo'lishi kerak" });
+    }
+
+    if (type === "oylik" && !sellerId) {
+      return res.status(400).json({ error: "Oylik uchun sotuvchini tanlash majburiy" });
+    }
+
+    // Admin hamyon balansini tekshirish
+    const totals = await CashTransaction.aggregate([
+      {
+        $group: {
+          _id: "$type",
+          total: { $sum: "$amount" },
+        },
+      },
+    ]);
+
+    let totalOut = 0;
+    let totalRashot = 0;
+    let totalOylik = 0;
+    for (const t of totals) {
+      if (t._id === "out") totalOut = t.total;
+      else if (t._id === "rashot") totalRashot = t.total;
+      else if (t._id === "oylik") totalOylik = t.total;
+    }
+
+    const adminPocketCents =
+      SaleService.toCents(totalOut) -
+      SaleService.toCents(totalRashot) -
+      SaleService.toCents(totalOylik);
+    const spendCents = SaleService.toCents(amount);
+
+    if (spendCents > adminPocketCents) {
+      const pocket = SaleService.toDollar(adminPocketCents);
+      return res.status(400).json({
+        error: `Admin hamyonida yetarli mablag' yo'q. Hamyon balansi: ${pocket}$`,
+      });
+    }
+
+    const transaction = await CashTransaction.create({
+      type,
+      amount: Number(SaleService.toDollar(SaleService.toCents(amount))),
+      description: description ? description.trim() : "",
+      performedBy: req.user._id,
+      relatedSeller: type === "oylik" ? sellerId : null,
+    });
+
+    await transaction.populate("performedBy", "username firstName lastName role");
+    await transaction.populate("relatedSeller", "firstName lastName username");
+
+    res.status(201).json({
+      message: type === "oylik" ? "Oylik muvaffaqiyatli berildi" : "Rashot qayd etildi",
       transaction,
     });
   } catch (error) {
