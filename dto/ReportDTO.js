@@ -75,8 +75,8 @@ class ReportDTO {
       return sum + SaleService.toCents((sale.quantity || 0) * costPrice);
     }, 0);
 
-    // Sof foyda = Naqd tushum - Tan narx
-    const totalProfitCents = totalPaidCents - totalSoldCostCents;
+    // Sof foyda = Jami sotuv (revenue) - Tan narx (qarz bo'lsa ham hisobga olinadi)
+    const totalProfitCents = totalRevenueCents - totalSoldCostCents;
 
     const uniqueSellers = new Set(
       activeSales.map((s) => s.seller?._id?.toString()).filter(Boolean),
