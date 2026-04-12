@@ -622,6 +622,272 @@ router.post(
   }
 );
 
+// Excel fayldagi takrorlangan SKU larni tekshirish (faqat ko'rsatadi, o'zgartirmaydi)
+router.post(
+  "/costs/check-duplicates",
+  authenticate,
+  isAdmin,
+  upload.single("file"),
+  async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "Fayl yuklanmadi" });
+      }
+
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(req.file.buffer);
+      const worksheet = workbook.worksheets[0];
+
+      if (!worksheet) {
+        return res.json({ duplicates: [] });
+      }
+
+      // Excel qatorlarini o'qish
+      const skuRows = {}; // { sku: [{ rowNum, costPrice, sellerPrice }] }
+      worksheet.eachRow((row, rowNumber) => {
+        if (rowNumber === 1) return;
+        const sku = row.values[1] ? String(row.values[1]).trim() : "";
+        if (!sku) return;
+        const skuLower = sku.toLowerCase();
+        if (!skuRows[skuLower]) skuRows[skuLower] = [];
+        skuRows[skuLower].push({
+          sku,
+          rowNum: rowNumber,
+          costPrice: row.values[2] != null ? Number(row.values[2]) : null,
+          sellerPrice: row.values[3] != null ? Number(row.values[3]) : null,
+        });
+      });
+
+      // Faqat 2+ marta uchraganlarni olish
+      const duplicateSkus = Object.values(skuRows)
+        .filter((rows) => rows.length > 1)
+        .map((rows) => rows[0].sku.toLowerCase());
+
+      if (duplicateSkus.length === 0) {
+        return res.json({ duplicates: [] });
+      }
+
+      // DBdan hozirgi qiymatlarni olish (warehouseQuantity)
+      const products = await Product.find({
+        sku: { $in: duplicateSkus.map((s) => new RegExp(`^${s}$`, "i")) },
+      }).select("sku name warehouseQuantity costPrice price");
+
+      const productMap = {};
+      products.forEach((p) => {
+        productMap[p.sku.toLowerCase()] = p;
+      });
+
+      // Natijani yig'ish
+      const duplicates = Object.entries(skuRows)
+        .filter(([, rows]) => rows.length > 1)
+        .map(([skuLower, rows]) => {
+          const dbProduct = productMap[skuLower];
+          return {
+            sku: rows[0].sku,
+            rows: rows.map((r) => r.rowNum),
+            excelCostPrice: rows[rows.length - 1].costPrice, // oxirgi qator ishlatiladi
+            excelSellerPrice: rows[rows.length - 1].sellerPrice,
+            warehouseQuantity: dbProduct?.warehouseQuantity ?? null,
+          };
+        });
+
+      res.json({ duplicates });
+    } catch (error) {
+      console.error("Check duplicates error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  }
+);
+
+// Tan narx yangilash uchun Excel shablon
+router.get("/costs/template", authenticate, isAdmin, async (req, res) => {
+  try {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet("CostPriceUpdate");
+
+    worksheet.columns = [
+      { header: "SKU (Majburiy)", key: "sku", width: 25 },
+      { header: "TanNarx (Majburiy, $)", key: "costPrice", width: 22 },
+      { header: "SotuvNarxi (Ixtiyoriy, $)", key: "price", width: 26 },
+    ];
+
+    // Header styling
+    const headerRow = worksheet.getRow(1);
+    headerRow.font = { bold: true, color: { argb: "FFFFFFFF" } };
+    headerRow.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FFB45309" }, // Amber
+    };
+
+    // Example rows
+    worksheet.addRows([
+      { sku: "IP15PM-256", costPrice: 20, price: 25 },
+      { sku: "APP2", costPrice: 40, price: 55 },
+      { sku: "MBA-M2-S", costPrice: 100, price: "" },
+    ]);
+
+    for (let i = 2; i <= 4; i++) {
+      worksheet.getRow(i).font = { color: { argb: "FF666666" }, italic: true };
+    }
+
+    // Info row
+    worksheet.addRow({});
+    const noteRow = worksheet.addRow({
+      sku: "ESLATMA: SotuvNarxi bo'sh qolsa — foiz yoki o'zgarmaydi (dialog sozlamasiga qarab)",
+    });
+    noteRow.font = { color: { argb: "FFB45309" }, italic: true, size: 9 };
+
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    );
+    res.setHeader(
+      "Content-Disposition",
+      'attachment; filename="cost_price_update_template.xlsx"'
+    );
+
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (error) {
+    console.error("Cost price template error:", error);
+    if (!res.headersSent) {
+      res.status(500).json({ error: error.message });
+    }
+  }
+});
+
+// Excel orqali tan narx (va sotuv narxi) ommaviy yangilash
+router.post(
+  "/costs/update",
+  authenticate,
+  isAdmin,
+  upload.single("file"),
+  async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "XLSX fayl yuklanmadi" });
+      }
+
+      const mode = req.body.mode || "percent"; // "percent" | "add"
+      const percent = mode === "percent" ? Number(req.body.percent || 0) : 0;
+      const addAmount = mode === "add" ? Number(req.body.addAmount || 0) : 0;
+
+      if (mode === "percent" && (isNaN(percent) || percent < 0)) {
+        return res.status(400).json({ error: "Foiz musbat son bo'lishi kerak" });
+      }
+      if (mode === "add" && (isNaN(addAmount) || addAmount < 0)) {
+        return res.status(400).json({ error: "Qo'shiladigan qiymat musbat son bo'lishi kerak" });
+      }
+
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(req.file.buffer);
+      const worksheet = workbook.worksheets[0];
+
+      if (!worksheet) {
+        return res.status(400).json({ error: "Excel fayli bo'sh" });
+      }
+
+      const rows = [];
+      worksheet.eachRow((row, rowNumber) => {
+        if (rowNumber === 1) return;
+        rows.push(row.values);
+      });
+
+      if (rows.length === 0) {
+        return res.status(400).json({ error: "Faylda ma'lumot yo'q" });
+      }
+
+      const errors = [];
+      const skus = rows
+        .map((r) => (r[1] ? String(r[1]).trim() : ""))
+        .filter(Boolean);
+
+      // SKU larni oldindan tekshirish
+      const existingProducts = await Product.find({
+        sku: { $in: skus },
+      }).select("sku");
+      const existingSkuSet = new Set(
+        existingProducts.map((p) => p.sku.toLowerCase())
+      );
+
+      const bulkOps = [];
+
+      for (let i = 0; i < rows.length; i++) {
+        const rowData = rows[i];
+        const rowNum = i + 2;
+
+        const sku = rowData[1] ? String(rowData[1]).trim() : "";
+        const costPrice = Number(rowData[2]);
+        const rawPrice = rowData[3];
+
+        if (!sku) {
+          errors.push({ row: rowNum, message: "SKU bo'sh" });
+          continue;
+        }
+
+        if (!existingSkuSet.has(sku.toLowerCase())) {
+          errors.push({ row: rowNum, message: `SKU topilmadi: ${sku}` });
+          continue;
+        }
+
+        if (isNaN(costPrice) || costPrice < 0) {
+          errors.push({ row: rowNum, message: `TanNarx noto'g'ri: ${sku}` });
+          continue;
+        }
+
+        // Sotuv narxini hisoblash:
+        // 1) Excel'da SotuvNarxi to'ldirilgan bo'lsa — u ustunlik qiladi (override)
+        // 2) Bo'sh bo'lsa — tanlangan mode bo'yicha hisoblanadi
+        let sellerPrice;
+        const parsedExcelPrice = Number(rawPrice);
+        if (
+          rawPrice !== undefined &&
+          rawPrice !== null &&
+          rawPrice !== "" &&
+          !isNaN(parsedExcelPrice) &&
+          parsedExcelPrice > 0
+        ) {
+          sellerPrice = parsedExcelPrice; // Excel override
+        } else if (mode === "percent") {
+          sellerPrice = parseFloat((costPrice * (1 + percent / 100)).toFixed(2));
+        } else if (mode === "add") {
+          sellerPrice = parseFloat((costPrice + addAmount).toFixed(2));
+        }
+
+        const updateFields = { costPrice };
+        if (sellerPrice !== undefined) {
+          updateFields.price = sellerPrice;
+        }
+
+        bulkOps.push({
+          updateOne: {
+            filter: { sku: { $regex: new RegExp(`^${sku}$`, "i") } },
+            update: { $set: updateFields },
+          },
+        });
+      }
+
+      let updatedCount = 0;
+      if (bulkOps.length > 0) {
+        const result = await Product.bulkWrite(bulkOps);
+        updatedCount = result.modifiedCount;
+      }
+
+      res.json({
+        success: true,
+        message: `${updatedCount} ta mahsulot yangilandi`,
+        updatedCount,
+        errorsCount: errors.length,
+        details: { errors },
+      });
+    } catch (error) {
+      console.error("Cost price update error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  }
+);
+
 // Get all products (admin only)
 router.get("/", authenticate, isAdmin, async (req, res) => {
   try {

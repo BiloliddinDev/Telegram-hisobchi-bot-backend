@@ -230,13 +230,36 @@ router.post("/spend", async (req, res) => {
       });
     }
 
-    const transaction = await CashTransaction.create({
+    const [transaction] = await CashTransaction.create([{
       type,
       amount: Number(SaleService.toDollar(SaleService.toCents(amount))),
       description: description ? description.trim() : "",
       performedBy: req.user._id,
       relatedSeller: type === "oylik" ? sellerId : null,
-    });
+    }]);
+
+    // Race condition tekshiruvi: yozuvdan KEYIN ham balansni qayta tekshiramiz
+    const newTotals = await CashTransaction.aggregate([
+      { $group: { _id: "$type", total: { $sum: "$amount" } } },
+    ]);
+    let newOut = 0, newRashot = 0, newOylik = 0;
+    for (const t of newTotals) {
+      if (t._id === "out") newOut = t.total;
+      else if (t._id === "rashot") newRashot = t.total;
+      else if (t._id === "oylik") newOylik = t.total;
+    }
+    const newPocketCents =
+      SaleService.toCents(newOut) -
+      SaleService.toCents(newRashot) -
+      SaleService.toCents(newOylik);
+
+    if (newPocketCents < 0) {
+      // Kompensatsiya: manfiy ketdi — yozuvni o'chiramiz
+      await CashTransaction.findByIdAndDelete(transaction._id);
+      return res.status(400).json({
+        error: "Admin hamyonida yetarli mablag' yo'q (bir vaqtda bir nechta so'rov). Qayta urinib ko'ring.",
+      });
+    }
 
     await transaction.populate("performedBy", "username firstName lastName role");
     await transaction.populate("relatedSeller", "firstName lastName username");

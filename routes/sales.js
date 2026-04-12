@@ -63,6 +63,7 @@ router.post("/batch", async (req, res) => {
     });
 
     // 2. Tranzaksiya
+    const zeroCostWarnings = [];
     await session.withTransaction(async () => {
       // Mijozni topish yoki yaratish
       let customerId = null;
@@ -128,6 +129,12 @@ router.post("/batch", async (req, res) => {
           );
         }
 
+        // costPrice=0 bo'lsa warning yig'amiz
+        const productCostPrice = sellerStock.product?.costPrice || 0;
+        if (!productCostPrice) {
+          zeroCostWarnings.push(sellerStock.product?.name || productId);
+        }
+
         // Sale yaratish
         await Sale.create(
           [
@@ -136,7 +143,7 @@ router.post("/batch", async (req, res) => {
               product: productId,
               quantity,
               price,
-              costPrice: sellerStock.product?.costPrice || 0,
+              costPrice: productCostPrice,
               customer: customerId || null,
               totalAmount: itemNet,
               paidAmount: itemPaid,
@@ -148,7 +155,9 @@ router.post("/batch", async (req, res) => {
               customerName: customerName || "",
               customerPhone: customerPhone || "",
               notes: notes || "",
-              discount: Number((discountAmount / items.length).toFixed(2)),
+              discount: SaleService.toDollar(
+                SaleService.toCents(item.itemRaw) - SaleService.toCents(item.itemNet)
+              ),
               discountPercent: discountPercent || 0,
             },
           ],
@@ -189,6 +198,11 @@ router.post("/batch", async (req, res) => {
       paidAmount: paid,
       debt,
       status,
+      ...(zeroCostWarnings.length > 0 && {
+        warnings: zeroCostWarnings.map(
+          (name) => `"${name}" mahsulotida tan narx (costPrice) kiritilmagan — foyda hisobi noto'g'ri bo'lishi mumkin`,
+        ),
+      }),
     });
   } catch (error) {
     console.error("Batch sotuv xatosi:", error);
@@ -236,6 +250,7 @@ router.get("/", async (req, res) => {
           debt: 0,
           paidAmount: 0,
           totalAmount: 0,
+          rawTotal: 0,
           discount: 0,
           discountPercent: sale.discountPercent || 0,
           status: sale.status,
@@ -265,6 +280,10 @@ router.get("/", async (req, res) => {
         groupsMap[key].totalAmount = SaleService.toDollar(
           SaleService.toCents(groupsMap[key].totalAmount) +
             SaleService.toCents(sale.totalAmount),
+        );
+        groupsMap[key].rawTotal = SaleService.toDollar(
+          SaleService.toCents(groupsMap[key].rawTotal) +
+            SaleService.toCents(sale.price * sale.quantity),
         );
         groupsMap[key].discount = SaleService.toDollar(
           SaleService.toCents(groupsMap[key].discount) +
