@@ -699,8 +699,8 @@ router.post(
   }
 );
 
-// Tan narx yangilash uchun Excel shablon
-router.get("/costs/template", authenticate, isAdmin, async (req, res) => {
+// Tan narx yangilash uchun Excel shablon (auth kerak emas — statik namuna fayl)
+router.get("/costs/template", async (req, res) => {
   try {
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet("CostPriceUpdate");
@@ -732,9 +732,8 @@ router.get("/costs/template", authenticate, isAdmin, async (req, res) => {
     }
 
     // Info row
-    worksheet.addRow({});
     const noteRow = worksheet.addRow({
-      sku: "ESLATMA: SotuvNarxi bo'sh qolsa — foiz yoki o'zgarmaydi (dialog sozlamasiga qarab)",
+      sku: "ESLATMA: SotuvNarxi bo'sh qolsa — dialog sozlamasidagi formula (foiz yoki qiymat) qo'llaniladi",
     });
     noteRow.font = { color: { argb: "FFB45309" }, italic: true, size: 9 };
 
@@ -838,7 +837,7 @@ router.post(
 
         // Sotuv narxini hisoblash:
         // 1) Excel'da SotuvNarxi to'ldirilgan bo'lsa — u ustunlik qiladi (override)
-        // 2) Bo'sh bo'lsa — tanlangan mode bo'yicha hisoblanadi
+        // 2) Bo'sh bo'lsa — tanlangan mode bo'yicha hisoblanadi (original import bilan bir xil formula)
         let sellerPrice;
         const parsedExcelPrice = Number(rawPrice);
         if (
@@ -850,9 +849,9 @@ router.post(
         ) {
           sellerPrice = parsedExcelPrice; // Excel override
         } else if (mode === "percent") {
-          sellerPrice = parseFloat((costPrice * (1 + percent / 100)).toFixed(2));
+          sellerPrice = Math.round((costPrice + (costPrice * percent) / 100) * 100) / 100;
         } else if (mode === "add") {
-          sellerPrice = parseFloat((costPrice + addAmount).toFixed(2));
+          sellerPrice = Math.round((costPrice + addAmount) * 100) / 100;
         }
 
         const updateFields = { costPrice };

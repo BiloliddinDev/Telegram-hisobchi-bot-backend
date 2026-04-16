@@ -3,7 +3,7 @@ const mongoose = require("mongoose");
 const cashTransactionSchema = new mongoose.Schema({
   type: {
     type: String,
-    enum: ["in", "out", "rashot", "oylik"],
+    enum: ["in", "out", "rashot", "oylik", "chiqim"],
     required: true,
   },
   amount: {

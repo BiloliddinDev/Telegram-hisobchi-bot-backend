@@ -36,6 +36,7 @@ router.get("/balance", async (req, res) => {
     let totalOut = 0;
     let totalRashot = 0;
     let totalOylik = 0;
+    let totalChiqim = 0;
     let countIn = 0;
     let countOut = 0;
 
@@ -50,6 +51,8 @@ router.get("/balance", async (req, res) => {
         totalRashot = r.total;
       } else if (r._id === "oylik") {
         totalOylik = r.total;
+      } else if (r._id === "chiqim") {
+        totalChiqim = r.total;
       }
     }
 
@@ -58,13 +61,22 @@ router.get("/balance", async (req, res) => {
     const adminPocketCents =
       SaleService.toCents(totalOut) -
       SaleService.toCents(totalRashot) -
-      SaleService.toCents(totalOylik);
+      SaleService.toCents(totalOylik) -
+      SaleService.toCents(totalChiqim);
+    const totalSpentCents =
+      SaleService.toCents(totalRashot) +
+      SaleService.toCents(totalOylik) +
+      SaleService.toCents(totalChiqim);
 
     res.json({
       balance: SaleService.toDollar(balanceCents),
       totalIn: SaleService.toDollar(SaleService.toCents(totalIn)),
       totalOut: SaleService.toDollar(SaleService.toCents(totalOut)),
       adminPocket: SaleService.toDollar(adminPocketCents),
+      totalRashot: SaleService.toDollar(SaleService.toCents(totalRashot)),
+      totalOylik: SaleService.toDollar(SaleService.toCents(totalOylik)),
+      totalChiqim: SaleService.toDollar(SaleService.toCents(totalChiqim)),
+      totalSpent: SaleService.toDollar(totalSpentCents),
       countIn,
       countOut,
     });
@@ -87,7 +99,7 @@ router.get("/transactions", async (req, res) => {
       };
     }
 
-    if (type && ["in", "out", "rashot", "oylik"].includes(type)) {
+    if (type && ["in", "out", "rashot", "oylik", "chiqim"].includes(type)) {
       query.type = type;
     }
 
@@ -190,8 +202,8 @@ router.post("/spend", async (req, res) => {
       return res.status(400).json({ error: "Summa 0 dan katta bo'lishi kerak" });
     }
 
-    if (!type || !["rashot", "oylik"].includes(type)) {
-      return res.status(400).json({ error: "Tur 'rashot' yoki 'oylik' bo'lishi kerak" });
+    if (!type || !["rashot", "oylik", "chiqim"].includes(type)) {
+      return res.status(400).json({ error: "Tur 'rashot', 'oylik' yoki 'chiqim' bo'lishi kerak" });
     }
 
     if (type === "oylik" && !sellerId) {
@@ -211,16 +223,19 @@ router.post("/spend", async (req, res) => {
     let totalOut = 0;
     let totalRashot = 0;
     let totalOylik = 0;
+    let totalChiqim = 0;
     for (const t of totals) {
       if (t._id === "out") totalOut = t.total;
       else if (t._id === "rashot") totalRashot = t.total;
       else if (t._id === "oylik") totalOylik = t.total;
+      else if (t._id === "chiqim") totalChiqim = t.total;
     }
 
     const adminPocketCents =
       SaleService.toCents(totalOut) -
       SaleService.toCents(totalRashot) -
-      SaleService.toCents(totalOylik);
+      SaleService.toCents(totalOylik) -
+      SaleService.toCents(totalChiqim);
     const spendCents = SaleService.toCents(amount);
 
     if (spendCents > adminPocketCents) {
@@ -242,16 +257,18 @@ router.post("/spend", async (req, res) => {
     const newTotals = await CashTransaction.aggregate([
       { $group: { _id: "$type", total: { $sum: "$amount" } } },
     ]);
-    let newOut = 0, newRashot = 0, newOylik = 0;
+    let newOut = 0, newRashot = 0, newOylik = 0, newChiqim = 0;
     for (const t of newTotals) {
       if (t._id === "out") newOut = t.total;
       else if (t._id === "rashot") newRashot = t.total;
       else if (t._id === "oylik") newOylik = t.total;
+      else if (t._id === "chiqim") newChiqim = t.total;
     }
     const newPocketCents =
       SaleService.toCents(newOut) -
       SaleService.toCents(newRashot) -
-      SaleService.toCents(newOylik);
+      SaleService.toCents(newOylik) -
+      SaleService.toCents(newChiqim);
 
     if (newPocketCents < 0) {
       // Kompensatsiya: manfiy ketdi — yozuvni o'chiramiz
@@ -265,7 +282,7 @@ router.post("/spend", async (req, res) => {
     await transaction.populate("relatedSeller", "firstName lastName username");
 
     res.status(201).json({
-      message: type === "oylik" ? "Oylik muvaffaqiyatli berildi" : "Rashot qayd etildi",
+      message: type === "oylik" ? "Oylik muvaffaqiyatli berildi" : type === "chiqim" ? "Dokon xarajati qayd etildi" : "Xarajat qayd etildi",
       transaction,
     });
   } catch (error) {
