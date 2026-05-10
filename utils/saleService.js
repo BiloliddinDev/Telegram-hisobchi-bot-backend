@@ -45,7 +45,23 @@ class SaleService {
     return { debt, status };
   }
 
-  // 3. To'lovni itemlarga taqsimlash
+  // 3. Order statusini aggregatsiyadan hisoblash
+  // Order ichidagi itemlar va jami summalar asosida to'g'ri statusni qaytaradi.
+  // Status: "returned" (hammasi qaytarilgan) | "debt" | "partial" | "paid"
+  static computeOrderStatus({ items, debt, paidAmount }) {
+    if (!items || items.length === 0) return "paid";
+
+    const allReturned = items.every((i) => i.status === "returned");
+    if (allReturned) return "returned";
+
+    const debtCents = this.toCents(debt || 0);
+    if (debtCents === 0) return "paid";
+
+    const paidCents = this.toCents(paidAmount || 0);
+    return paidCents === 0 ? "debt" : "partial";
+  }
+
+  // 4. To'lovni itemlarga taqsimlash
   static distributePayment({ items, discountPercent, paid, rawTotal }) {
     const paidCents = this.toCents(paid);
     const rawTotalCents = this.toCents(rawTotal);

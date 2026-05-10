@@ -13,16 +13,8 @@ router.get("/balance", async (req, res) => {
   try {
     const { start, end } = req.query;
 
-    const match = {};
-    if (start && end) {
-      match.createdAt = {
-        $gte: new Date(`${start}T00:00:00.000Z`),
-        $lte: new Date(`${end}T23:59:59.999Z`),
-      };
-    }
-
-    const result = await CashTransaction.aggregate([
-      { $match: match },
+    // ALL-TIME aggregate — actual kassa balance (date filter qo'llanmaydi)
+    const allTimeResult = await CashTransaction.aggregate([
       {
         $group: {
           _id: "$type",
@@ -32,51 +24,66 @@ router.get("/balance", async (req, res) => {
       },
     ]);
 
-    let totalIn = 0;
-    let totalOut = 0;
-    let totalRashot = 0;
-    let totalOylik = 0;
-    let totalChiqim = 0;
-    let countIn = 0;
-    let countOut = 0;
-
-    for (const r of result) {
-      if (r._id === "in") {
-        totalIn = r.total;
-        countIn = r.count;
-      } else if (r._id === "out") {
-        totalOut = r.total;
-        countOut = r.count;
-      } else if (r._id === "rashot") {
-        totalRashot = r.total;
-      } else if (r._id === "oylik") {
-        totalOylik = r.total;
-      } else if (r._id === "chiqim") {
-        totalChiqim = r.total;
-      }
+    let allIn = 0, allOut = 0, allRashot = 0, allOylik = 0, allChiqim = 0;
+    for (const r of allTimeResult) {
+      if (r._id === "in") allIn = r.total;
+      else if (r._id === "out") allOut = r.total;
+      else if (r._id === "rashot") allRashot = r.total;
+      else if (r._id === "oylik") allOylik = r.total;
+      else if (r._id === "chiqim") allChiqim = r.total;
     }
 
-    const balanceCents =
-      SaleService.toCents(totalIn) - SaleService.toCents(totalOut);
+    const balanceCents = SaleService.toCents(allIn) - SaleService.toCents(allOut);
     const adminPocketCents =
-      SaleService.toCents(totalOut) -
-      SaleService.toCents(totalRashot) -
-      SaleService.toCents(totalOylik) -
-      SaleService.toCents(totalChiqim);
+      SaleService.toCents(allOut) -
+      SaleService.toCents(allRashot) -
+      SaleService.toCents(allOylik) -
+      SaleService.toCents(allChiqim);
     const totalSpentCents =
-      SaleService.toCents(totalRashot) +
-      SaleService.toCents(totalOylik) +
-      SaleService.toCents(totalChiqim);
+      SaleService.toCents(allRashot) +
+      SaleService.toCents(allOylik) +
+      SaleService.toCents(allChiqim);
+
+    // Period aggregate — tanlanган sana oralig'idagi statistika
+    const periodMatch = {};
+    if (start && end) {
+      periodMatch.createdAt = {
+        $gte: new Date(`${start}T00:00:00.000Z`),
+        $lte: new Date(`${end}T23:59:59.999Z`),
+      };
+    }
+
+    const periodResult = await CashTransaction.aggregate([
+      { $match: periodMatch },
+      {
+        $group: {
+          _id: "$type",
+          total: { $sum: "$amount" },
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+
+    let totalIn = 0, totalOut = 0, totalRashot = 0, totalOylik = 0, totalChiqim = 0;
+    let countIn = 0, countOut = 0;
+    for (const r of periodResult) {
+      if (r._id === "in") { totalIn = r.total; countIn = r.count; }
+      else if (r._id === "out") { totalOut = r.total; countOut = r.count; }
+      else if (r._id === "rashot") totalRashot = r.total;
+      else if (r._id === "oylik") totalOylik = r.total;
+      else if (r._id === "chiqim") totalChiqim = r.total;
+    }
 
     res.json({
       balance: SaleService.toDollar(balanceCents),
+      adminPocket: SaleService.toDollar(adminPocketCents),
+      totalRashot: SaleService.toDollar(SaleService.toCents(allRashot)),
+      totalOylik: SaleService.toDollar(SaleService.toCents(allOylik)),
+      totalChiqim: SaleService.toDollar(SaleService.toCents(allChiqim)),
+      totalSpent: SaleService.toDollar(totalSpentCents),
+      // Period stats
       totalIn: SaleService.toDollar(SaleService.toCents(totalIn)),
       totalOut: SaleService.toDollar(SaleService.toCents(totalOut)),
-      adminPocket: SaleService.toDollar(adminPocketCents),
-      totalRashot: SaleService.toDollar(SaleService.toCents(totalRashot)),
-      totalOylik: SaleService.toDollar(SaleService.toCents(totalOylik)),
-      totalChiqim: SaleService.toDollar(SaleService.toCents(totalChiqim)),
-      totalSpent: SaleService.toDollar(totalSpentCents),
       countIn,
       countOut,
     });
