@@ -252,8 +252,7 @@ router.get("/", async (req, res) => {
           totalAmount: 0,
           rawTotal: 0,
           discount: 0,
-          discountPercent: sale.discountPercent || 0,
-          status: sale.status,
+          discountPercent: 0,
           dueDate: sale.dueDate,
         };
       }
@@ -289,15 +288,20 @@ router.get("/", async (req, res) => {
           SaleService.toCents(groupsMap[key].discount) +
             SaleService.toCents(sale.discount || 0),
         );
+        // discountPercent faol itemdan olinadi
+        groupsMap[key].discountPercent = sale.discountPercent || 0;
       }
-      groupsMap[key].discountPercent = sale.discountPercent || 0;
     }
 
     const groupedSales = Object.values(groupsMap)
-      .map((group) => {
-        const allReturned = group.items.every((i) => i.status === "returned");
-        return { ...group, status: allReturned ? "returned" : group.status };
-      })
+      .map((group) => ({
+        ...group,
+        status: SaleService.computeOrderStatus({
+          items: group.items,
+          debt: group.debt,
+          paidAmount: group.paidAmount,
+        }),
+      }))
       .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 
     res.json({ sales: groupedSales });
@@ -403,15 +407,18 @@ router.post("/return", async (req, res) => {
         const isFullReturn = returnQty === sale.quantity;
         const ratio = returnQty / sale.quantity;
 
-        const returnedPaid = SaleService.toDollar(
+        // Total va paid mustaqil yaxlitlanadi; debt esa total - paid orqali
+        // hisoblanadi — shunda invariant (total = paid + debt) buzilmaydi.
+        const returnedTotalCents = Math.round(SaleService.toCents(sale.totalAmount) * ratio);
+        const returnedPaidCents = Math.min(
+          returnedTotalCents,
           Math.round(SaleService.toCents(sale.paidAmount) * ratio)
         );
-        const returnedDebt = SaleService.toDollar(
-          Math.round(SaleService.toCents(sale.debt || 0) * ratio)
-        );
-        const returnedTotal = SaleService.toDollar(
-          Math.round(SaleService.toCents(sale.totalAmount) * ratio)
-        );
+        const returnedDebtCents = Math.max(0, returnedTotalCents - returnedPaidCents);
+
+        const returnedTotal = SaleService.toDollar(returnedTotalCents);
+        const returnedPaid = SaleService.toDollar(returnedPaidCents);
+        const returnedDebt = SaleService.toDollar(returnedDebtCents);
 
         // Zaxirani sotuvchiga qaytarish
         await SellerStock.increaseQuantity({
@@ -429,19 +436,49 @@ router.post("/return", async (req, res) => {
             { session }
           );
         } else {
-          // Qisman qaytarish: qolgan miqdorni saqlash
+          // Qisman qaytarish: recordni ikkiga bo'lamiz (sotilgan qismi va qaytarilgan qismi)
+          
+          // 1. Yangi "returned" record yaratish
+          const returnedSaleData = sale.toObject();
+          delete returnedSaleData._id;
+          delete returnedSaleData.createdAt;
+          delete returnedSaleData.updatedAt;
+          
+          returnedSaleData.quantity = returnQty;
+          returnedSaleData.totalAmount = returnedTotal;
+          returnedSaleData.paidAmount = returnedPaid;
+          returnedSaleData.debt = returnedDebt;
+          returnedSaleData.status = "returned";
+          returnedSaleData.isDebt = false;
+          returnedSaleData.discount = SaleService.toDollar(
+            Math.round(SaleService.toCents(sale.discount || 0) * ratio)
+          );
+
+          await Sale.create([returnedSaleData], { session });
+
+          // 2. Asl recordni yangilash (miqdorni kamaytirish va summalarni qayta hisoblash)
+          const newTotalAmount = SaleService.toDollar(
+            SaleService.toCents(sale.totalAmount) - SaleService.toCents(returnedTotal)
+          );
+          const newPaidAmount = SaleService.toDollar(
+            SaleService.toCents(sale.paidAmount) - SaleService.toCents(returnedPaid)
+          );
+          const { debt: newDebt, status: newStatus } = SaleService.calculateStatus({
+            netTotal: newTotalAmount,
+            paidAmount: newPaidAmount,
+          });
+
           await Sale.findByIdAndUpdate(
             sale._id,
             {
               quantity: sale.quantity - returnQty,
-              totalAmount: SaleService.toDollar(
-                SaleService.toCents(sale.totalAmount) - SaleService.toCents(returnedTotal)
-              ),
-              paidAmount: SaleService.toDollar(
-                SaleService.toCents(sale.paidAmount) - SaleService.toCents(returnedPaid)
-              ),
-              debt: SaleService.toDollar(
-                Math.max(0, SaleService.toCents(sale.debt || 0) - SaleService.toCents(returnedDebt))
+              totalAmount: newTotalAmount,
+              paidAmount: newPaidAmount,
+              debt: newDebt,
+              status: newStatus,
+              isDebt: newDebt > 0,
+              discount: SaleService.toDollar(
+                SaleService.toCents(sale.discount || 0) - Math.round(SaleService.toCents(sale.discount || 0) * ratio)
               ),
             },
             { session }

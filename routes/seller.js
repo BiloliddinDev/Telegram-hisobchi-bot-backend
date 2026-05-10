@@ -114,11 +114,10 @@ router.get("/sales", async (req, res) => {
           timestamp: sale.timestamp,
           items: [],
           totalAmount: 0, // chegirma ayirilgan
-          rawTotal: 0, // chegirmasiz ← yangi
+          rawTotal: 0, // chegirmasiz
           discountPercent: 0,
           debt: 0,
           paidAmount: 0,
-          status: sale.status,
           dueDate: sale.dueDate,
         };
       }
@@ -150,17 +149,20 @@ router.get("/sales", async (req, res) => {
           SaleService.toCents(groupsMap[key].rawTotal) +
             SaleService.toCents(sale.price * sale.quantity),
         );
+        // discountPercent faol itemdan olinadi (qaytarilgan recordda eski qiymat bo'lishi mumkin)
+        groupsMap[key].discountPercent = sale.discountPercent || 0;
       }
-
-      groupsMap[key].discountPercent = sale.discountPercent || 0;
     }
 
     const groupedSales = Object.values(groupsMap)
-      .map((group) => {
-        // Barcha itemlar qaytarilgan bo'lsa → butun order "returned"
-        const allReturned = group.items.every((i) => i.status === "returned");
-        return { ...group, status: allReturned ? "returned" : group.status };
-      })
+      .map((group) => ({
+        ...group,
+        status: SaleService.computeOrderStatus({
+          items: group.items,
+          debt: group.debt,
+          paidAmount: group.paidAmount,
+        }),
+      }))
       .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 
     res.json({ sales: groupedSales });
