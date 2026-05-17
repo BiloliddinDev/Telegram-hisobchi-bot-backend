@@ -27,6 +27,9 @@ router.post("/batch", async (req, res) => {
       discountPercent,
       discount,
       dueDate,
+      paymentMethod = "cash",
+      cashPaid = 0,
+      cardPaid = 0,
     } = req.body;
 
     // Validatsiya
@@ -106,7 +109,13 @@ router.post("/batch", async (req, res) => {
       }
 
       // Har bir item uchun
-      for (const item of distributedItems) {
+      const totalPaidCents = SaleService.toCents(paid);
+      let remainingCashCents = SaleService.toCents(cashPaid);
+      let remainingCardCents = SaleService.toCents(cardPaid);
+
+      for (let i = 0; i < distributedItems.length; i++) {
+        const item = distributedItems[i];
+        const isLastItem = i === distributedItems.length - 1;
         const { productId, quantity, price, itemNet, itemPaid, itemDebt } =
           item;
 
@@ -135,6 +144,35 @@ router.post("/batch", async (req, res) => {
           zeroCostWarnings.push(sellerStock.product?.name || productId);
         }
 
+        // Pro-rate cash and card payments for mixed method
+        let itemCashPaid = 0;
+        let itemCardPaid = 0;
+        const itemPaidCents = SaleService.toCents(itemPaid);
+
+        if (paymentMethod === "mixed" && totalPaidCents > 0) {
+          if (isLastItem) {
+            itemCashPaid = SaleService.toDollar(remainingCashCents);
+            itemCardPaid = SaleService.toDollar(remainingCardCents);
+          } else {
+            const itemCashCents = Math.round((itemPaidCents * SaleService.toCents(cashPaid)) / totalPaidCents);
+            const itemCardCents = itemPaidCents - itemCashCents;
+            
+            // Limit by remaining to avoid over-distribution due to rounding
+            const actualCashCents = Math.min(itemCashCents, remainingCashCents);
+            const actualCardCents = Math.min(itemCardCents, remainingCardCents);
+            
+            itemCashPaid = SaleService.toDollar(actualCashCents);
+            itemCardPaid = SaleService.toDollar(itemPaidCents - actualCashCents);
+            
+            remainingCashCents -= actualCashCents;
+            remainingCardCents -= (itemPaidCents - actualCashCents);
+          }
+        } else if (paymentMethod === "card") {
+          itemCardPaid = itemPaid;
+        } else {
+          itemCashPaid = itemPaid;
+        }
+
         // Sale yaratish
         await Sale.create(
           [
@@ -159,6 +197,9 @@ router.post("/batch", async (req, res) => {
                 SaleService.toCents(item.itemRaw) - SaleService.toCents(item.itemNet)
               ),
               discountPercent: discountPercent || 0,
+              paymentMethod,
+              cashPaid: itemCashPaid,
+              cardPaid: itemCardPaid,
             },
           ],
           { session },
@@ -172,20 +213,55 @@ router.post("/batch", async (req, res) => {
         );
       }
 
-      // Kassaga naqd tushum yozish (agar to'lov bo'lsa)
-      const paidCents = SaleService.toCents(paid);
-      if (paidCents > 0) {
-        await CashTransaction.create(
-          [
-            {
-              type: "in",
-              amount: Number(paid),
-              description: `Sotuv: ${orderId}`,
-              performedBy: req.user._id,
-            },
-          ],
-          { session },
-        );
+      // Kassaga tushum yozish
+      if (paymentMethod === "mixed") {
+        const cashCents = SaleService.toCents(cashPaid);
+        const cardCents = SaleService.toCents(cardPaid);
+
+        if (cashCents > 0) {
+          await CashTransaction.create(
+            [
+              {
+                type: "in",
+                amount: SaleService.toDollar(cashCents),
+                paymentMethod: "cash",
+                description: `Sotuv (Naqd): ${orderId}`,
+                performedBy: req.user._id,
+              },
+            ],
+            { session },
+          );
+        }
+        if (cardCents > 0) {
+          await CashTransaction.create(
+            [
+              {
+                type: "in",
+                amount: SaleService.toDollar(cardCents),
+                paymentMethod: "card",
+                description: `Sotuv (Karta): ${orderId}`,
+                performedBy: req.user._id,
+              },
+            ],
+            { session },
+          );
+        }
+      } else {
+        const paidCents = SaleService.toCents(paid);
+        if (paidCents > 0) {
+          await CashTransaction.create(
+            [
+              {
+                type: "in",
+                amount: SaleService.toDollar(paidCents),
+                paymentMethod: paymentMethod === "card" ? "card" : "cash",
+                description: `Sotuv (${paymentMethod === "card" ? "Karta" : "Naqd"}): ${orderId}`,
+                performedBy: req.user._id,
+              },
+            ],
+            { session },
+          );
+        }
       }
     });
 
@@ -416,6 +492,15 @@ router.post("/return", async (req, res) => {
         );
         const returnedDebtCents = Math.max(0, returnedTotalCents - returnedPaidCents);
 
+        // Aralash to'lov qismlarini ham proportsional hisoblaymiz
+        const returnedCashPaidCents = Math.round(SaleService.toCents(sale.cashPaid || 0) * ratio);
+        const returnedCardPaidCents = Math.min(
+          returnedPaidCents - returnedCashPaidCents, 
+          Math.round(SaleService.toCents(sale.cardPaid || 0) * ratio)
+        );
+        // CardPaid ni qoldiq sifatida aniqroq hisoblash (sent farqi chiqmasligi uchun)
+        const finalReturnedCardPaidCents = Math.max(0, returnedPaidCents - returnedCashPaidCents);
+
         const returnedTotal = SaleService.toDollar(returnedTotalCents);
         const returnedPaid = SaleService.toDollar(returnedPaidCents);
         const returnedDebt = SaleService.toDollar(returnedDebtCents);
@@ -432,7 +517,14 @@ router.post("/return", async (req, res) => {
         if (isFullReturn) {
           await Sale.findByIdAndUpdate(
             sale._id,
-            { status: "returned" },
+            { 
+              status: "returned",
+              cashPaid: 0,
+              cardPaid: 0,
+              paidAmount: 0,
+              debt: 0,
+              isDebt: false
+            },
             { session }
           );
         } else {
@@ -448,6 +540,8 @@ router.post("/return", async (req, res) => {
           returnedSaleData.totalAmount = returnedTotal;
           returnedSaleData.paidAmount = returnedPaid;
           returnedSaleData.debt = returnedDebt;
+          returnedSaleData.cashPaid = SaleService.toDollar(returnedCashPaidCents);
+          returnedSaleData.cardPaid = SaleService.toDollar(finalReturnedCardPaidCents);
           returnedSaleData.status = "returned";
           returnedSaleData.isDebt = false;
           returnedSaleData.discount = SaleService.toDollar(
@@ -463,6 +557,13 @@ router.post("/return", async (req, res) => {
           const newPaidAmount = SaleService.toDollar(
             SaleService.toCents(sale.paidAmount) - SaleService.toCents(returnedPaid)
           );
+          const newCashPaid = SaleService.toDollar(
+            SaleService.toCents(sale.cashPaid || 0) - returnedCashPaidCents
+          );
+          const newCardPaid = SaleService.toDollar(
+            SaleService.toCents(sale.cardPaid || 0) - finalReturnedCardPaidCents
+          );
+
           const { debt: newDebt, status: newStatus } = SaleService.calculateStatus({
             netTotal: newTotalAmount,
             paidAmount: newPaidAmount,
@@ -474,6 +575,8 @@ router.post("/return", async (req, res) => {
               quantity: sale.quantity - returnQty,
               totalAmount: newTotalAmount,
               paidAmount: newPaidAmount,
+              cashPaid: newCashPaid,
+              cardPaid: newCardPaid,
               debt: newDebt,
               status: newStatus,
               isDebt: newDebt > 0,

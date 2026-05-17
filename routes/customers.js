@@ -126,11 +126,15 @@ router.post("/:id/payment", async (req, res) => {
       return res.status(400).json({ error: "Invalid customer ID format" });
     }
 
-    const { amount, notes } = req.body;
+    const { amount, notes, paymentMethod = "cash" } = req.body;
     const parsedAmount = Number(amount);
 
     if (!amount || isNaN(parsedAmount) || parsedAmount <= 0) {
       return res.status(400).json({ error: "To'lov summasi noto'g'ri" });
+    }
+
+    if (!["cash", "card"].includes(paymentMethod)) {
+      return res.status(400).json({ error: "paymentMethod: 'cash' yoki 'card' bo'lishi kerak" });
     }
 
     const amountCents = SaleService.toCents(parsedAmount);
@@ -162,6 +166,7 @@ router.post("/:id/payment", async (req, res) => {
             seller: req.user._id,
             customer: customer._id,
             amount: SaleService.toDollar(amountCents),
+            paymentMethod,
             notes: notes || "",
           },
         ],
@@ -174,7 +179,8 @@ router.post("/:id/payment", async (req, res) => {
           {
             type: "in",
             amount: SaleService.toDollar(amountCents),
-            description: `Mijoz to'lovi: ${customer.name}`,
+            paymentMethod,
+            description: `Mijoz to'lovi (${paymentMethod === "card" ? "Karta" : "Naqd"}): ${customer.name}`,
             performedBy: req.user._id,
           },
         ],
@@ -212,16 +218,20 @@ router.post("/:id/payment", async (req, res) => {
           SaleService.toCents(sale.paidAmount) + payAmountCents,
         );
 
-        await Sale.findByIdAndUpdate(
-          sale._id,
-          {
-            debt: newDebt,
-            paidAmount: newPaid,
-            status: newDebt === 0 ? "paid" : "partial",
-            isDebt: newDebt > 0,
-          },
-          { session },
-        );
+        const updateData = {
+          debt: newDebt,
+          paidAmount: newPaid,
+          status: newDebt === 0 ? "paid" : "partial",
+          isDebt: newDebt > 0,
+        };
+
+        if (paymentMethod === "card") {
+          updateData.cardPaid = SaleService.toDollar(SaleService.toCents(sale.cardPaid || 0) + payAmountCents);
+        } else {
+          updateData.cashPaid = SaleService.toDollar(SaleService.toCents(sale.cashPaid || 0) + payAmountCents);
+        }
+
+        await Sale.findByIdAndUpdate(sale._id, updateData, { session });
 
         remainingCents -= payAmountCents;
       }

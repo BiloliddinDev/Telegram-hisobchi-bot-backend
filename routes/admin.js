@@ -304,6 +304,12 @@ router.get("/sellers/:sellerId/sales", async (req, res) => {
           0,
         ),
       ),
+      totalPaidCash: SaleService.toDollar(
+        sales.reduce((sum, s) => sum + (s.status !== "returned" ? SaleService.toCents(s.cashPaid || 0) : 0), 0)
+      ),
+      totalPaidCard: SaleService.toDollar(
+        sales.reduce((sum, s) => sum + (s.status !== "returned" ? SaleService.toCents(s.cardPaid || 0) : 0), 0)
+      ),
     };
 
     res.json({ sales: groupedSales, stats });
