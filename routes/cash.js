@@ -17,23 +17,30 @@ router.get("/balance", async (req, res) => {
     const allTimeResult = await CashTransaction.aggregate([
       {
         $group: {
-          _id: "$type",
+          _id: { type: "$type", method: "$paymentMethod" },
           total: { $sum: "$amount" },
           count: { $sum: 1 },
         },
       },
     ]);
 
-    let allIn = 0, allOut = 0, allRashot = 0, allOylik = 0, allChiqim = 0;
+    let allInCash = 0, allInCard = 0, allOut = 0, allRashot = 0, allOylik = 0, allChiqim = 0;
     for (const r of allTimeResult) {
-      if (r._id === "in") allIn = r.total;
-      else if (r._id === "out") allOut = r.total;
-      else if (r._id === "rashot") allRashot = r.total;
-      else if (r._id === "oylik") allOylik = r.total;
-      else if (r._id === "chiqim") allChiqim = r.total;
+      const { type, method } = r._id;
+      if (type === "in") {
+        if (method === "card") allInCard = r.total;
+        else allInCash = r.total;
+      }
+      else if (type === "out") allOut = r.total;
+      else if (type === "rashot") allRashot = r.total;
+      else if (type === "oylik") allOylik = r.total;
+      else if (type === "chiqim") allChiqim = r.total;
     }
 
-    const balanceCents = SaleService.toCents(allIn) - SaleService.toCents(allOut);
+    const cashBalanceCents = SaleService.toCents(allInCash) - SaleService.toCents(allOut);
+    const cardBalanceCents = SaleService.toCents(allInCard);
+    const totalBalanceCents = cashBalanceCents + cardBalanceCents;
+
     const adminPocketCents =
       SaleService.toCents(allOut) -
       SaleService.toCents(allRashot) -
@@ -57,32 +64,42 @@ router.get("/balance", async (req, res) => {
       { $match: periodMatch },
       {
         $group: {
-          _id: "$type",
+          _id: { type: "$type", method: "$paymentMethod" },
           total: { $sum: "$amount" },
           count: { $sum: 1 },
         },
       },
     ]);
 
-    let totalIn = 0, totalOut = 0, totalRashot = 0, totalOylik = 0, totalChiqim = 0;
+    let totalInCash = 0, totalInCard = 0, totalOut = 0, totalRashot = 0, totalOylik = 0, totalChiqim = 0;
     let countIn = 0, countOut = 0;
     for (const r of periodResult) {
-      if (r._id === "in") { totalIn = r.total; countIn = r.count; }
-      else if (r._id === "out") { totalOut = r.total; countOut = r.count; }
-      else if (r._id === "rashot") totalRashot = r.total;
-      else if (r._id === "oylik") totalOylik = r.total;
-      else if (r._id === "chiqim") totalChiqim = r.total;
+      const { type, method } = r._id;
+      if (type === "in") {
+        if (method === "card") totalInCard = r.total;
+        else totalInCash = r.total;
+        countIn += r.count;
+      }
+      else if (type === "out") { totalOut = r.total; countOut = r.count; }
+      else if (type === "rashot") totalRashot = r.total;
+      else if (type === "oylik") totalOylik = r.total;
+      else if (type === "chiqim") totalChiqim = r.total;
     }
 
     res.json({
-      balance: SaleService.toDollar(balanceCents),
+      balance: SaleService.toDollar(cashBalanceCents), // Hozircha kassa (naqd) balansi asosiy balans sifatida
+      cashBalance: SaleService.toDollar(cashBalanceCents),
+      cardBalance: SaleService.toDollar(cardBalanceCents),
+      totalBalance: SaleService.toDollar(totalBalanceCents),
       adminPocket: SaleService.toDollar(adminPocketCents),
       totalRashot: SaleService.toDollar(SaleService.toCents(allRashot)),
       totalOylik: SaleService.toDollar(SaleService.toCents(allOylik)),
       totalChiqim: SaleService.toDollar(SaleService.toCents(allChiqim)),
       totalSpent: SaleService.toDollar(totalSpentCents),
       // Period stats
-      totalIn: SaleService.toDollar(SaleService.toCents(totalIn)),
+      totalIn: SaleService.toDollar(SaleService.toCents(totalInCash) + SaleService.toCents(totalInCard)),
+      totalInCash: SaleService.toDollar(SaleService.toCents(totalInCash)),
+      totalInCard: SaleService.toDollar(SaleService.toCents(totalInCard)),
       totalOut: SaleService.toDollar(SaleService.toCents(totalOut)),
       countIn,
       countOut,
@@ -139,7 +156,7 @@ router.get("/transactions", async (req, res) => {
 // Withdraw cash (admin takes money)
 router.post("/withdraw", async (req, res) => {
   try {
-    const { amount, description } = req.body;
+    const { amount, description, paymentMethod = "cash" } = req.body;
 
     if (!amount || amount <= 0) {
       return res.status(400).json({ error: "Summa 0 dan katta bo'lishi kerak" });
@@ -151,8 +168,13 @@ router.post("/withdraw", async (req, res) => {
         .json({ error: "Izoh yozish majburiy" });
     }
 
-    // Kassa balansini tekshirish
+    if (!["cash", "card"].includes(paymentMethod)) {
+      return res.status(400).json({ error: "paymentMethod: 'cash' yoki 'card' bo'lishi kerak" });
+    }
+
+    // Kassa balansini tekshirish (metod bo'yicha)
     const totals = await CashTransaction.aggregate([
+      { $match: { paymentMethod } },
       {
         $group: {
           _id: "$type",
@@ -174,14 +196,16 @@ router.post("/withdraw", async (req, res) => {
 
     if (withdrawCents > currentBalanceCents) {
       const currentBalance = SaleService.toDollar(currentBalanceCents);
+      const methodName = paymentMethod === "card" ? "Bank (Karta)" : "Kassa (Naqd)";
       return res.status(400).json({
-        error: `Kassada yetarli mablag' yo'q. Kassa balansi: ${currentBalance}$`,
+        error: `${methodName}da yetarli mablag' yo'q. Mavjud: ${currentBalance}$`,
       });
     }
 
     const transaction = await CashTransaction.create({
       type: "out",
       amount: Number(SaleService.toDollar(SaleService.toCents(amount))),
+      paymentMethod,
       description: description.trim(),
       performedBy: req.user._id,
     });
@@ -192,7 +216,7 @@ router.post("/withdraw", async (req, res) => {
     );
 
     res.status(201).json({
-      message: "Kassadan pul muvaffaqiyatli olindi",
+      message: "Pul muvaffaqiyatli olindi",
       transaction,
     });
   } catch (error) {

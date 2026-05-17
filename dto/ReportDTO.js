@@ -63,6 +63,16 @@ class ReportDTO {
       0,
     );
 
+    const totalPaidCashCents = activeSales.reduce(
+      (sum, sale) => sum + SaleService.toCents(sale.cashPaid || 0),
+      0,
+    );
+
+    const totalPaidCardCents = activeSales.reduce(
+      (sum, sale) => sum + SaleService.toCents(sale.cardPaid || 0),
+      0,
+    );
+
     // Qarzlar (hali olinmagan)
     const totalDebtCents = activeSales.reduce(
       (sum, sale) => sum + SaleService.toCents(sale.debt || 0),
@@ -116,6 +126,8 @@ class ReportDTO {
         totalReturned,
         totalRevenue,
         totalPaid,
+        totalPaidCash: SaleService.toDollar(totalPaidCashCents),
+        totalPaidCard: SaleService.toDollar(totalPaidCardCents),
         totalDebt,
         totalProfit,
         debtRatio,
@@ -177,26 +189,36 @@ class ReportDTO {
     const cashResult = await CashTransaction.aggregate([
       {
         $group: {
-          _id: "$type",
+          _id: { type: "$type", method: "$paymentMethod" },
           total: { $sum: "$amount" },
         },
       },
     ]);
 
-    let cashTotalIn = 0;
-    let cashTotalOut = 0;
+    let cashTotalIn = 0, cardTotalIn = 0, totalOut = 0;
+    let cashOut = 0, cardOut = 0;
+
     for (const r of cashResult) {
-      if (r._id === "in") cashTotalIn = r.total;
-      else if (r._id === "out") cashTotalOut = r.total;
+      const { type, method } = r._id;
+      if (type === "in") {
+        if (method === "card") cardTotalIn += SaleService.toCents(r.total);
+        else cashTotalIn += SaleService.toCents(r.total);
+      } else if (type === "out") {
+        totalOut += SaleService.toCents(r.total);
+        if (method === "card") cardOut += SaleService.toCents(r.total);
+        else cashOut += SaleService.toCents(r.total);
+      }
     }
 
-    const kassaBalanceCents =
-      SaleService.toCents(cashTotalIn) - SaleService.toCents(cashTotalOut);
+    const cashBalanceCents = cashTotalIn - cashOut;
+    const cardBalanceCents = cardTotalIn - cardOut;
 
     const kassa = {
-      balance: SaleService.toDollar(kassaBalanceCents),
-      totalIn: SaleService.toDollar(SaleService.toCents(cashTotalIn)),
-      totalOut: SaleService.toDollar(SaleService.toCents(cashTotalOut)),
+      balance: SaleService.toDollar(cashBalanceCents + cardBalanceCents),
+      cashBalance: SaleService.toDollar(cashBalanceCents),
+      cardBalance: SaleService.toDollar(cardBalanceCents),
+      totalIn: SaleService.toDollar(cashTotalIn + cardTotalIn),
+      totalOut: SaleService.toDollar(totalOut),
     };
 
     return new ReportDTO(

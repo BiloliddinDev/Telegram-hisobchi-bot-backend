@@ -81,6 +81,8 @@ router.get("/", authenticate, isAdmin, async (req, res) => {
     let totalCostCents = 0;
     let totalDebtCents = 0;
     let totalPaidCents = 0;
+    let totalPaidCashCents = 0;
+    let totalPaidCardCents = 0;
     let totalReturned = 0;
 
     sales.forEach((sale) => {
@@ -96,6 +98,8 @@ router.get("/", authenticate, isAdmin, async (req, res) => {
 
       totalDebtCents += SaleService.toCents(sale.debt || 0);
       totalPaidCents += SaleService.toCents(sale.paidAmount || 0);
+      totalPaidCashCents += SaleService.toCents(sale.cashPaid || 0);
+      totalPaidCardCents += SaleService.toCents(sale.cardPaid || 0);
     });
 
     const netProfitCents = totalRevenueCents - totalCostCents;
@@ -119,6 +123,8 @@ router.get("/", authenticate, isAdmin, async (req, res) => {
         netProfit: SaleService.toDollar(netProfitCents),
         totalDebt: SaleService.toDollar(totalDebtCents),
         totalPaid: SaleService.toDollar(totalPaidCents),
+        totalPaidCash: SaleService.toDollar(totalPaidCashCents),
+        totalPaidCard: SaleService.toDollar(totalPaidCardCents),
         totalSales: sales.length - totalReturned,
         totalReturned,
         // Inventar

@@ -65,24 +65,48 @@ class SaleService {
   static distributePayment({ items, discountPercent, paid, rawTotal }) {
     const paidCents = this.toCents(paid);
     const rawTotalCents = this.toCents(rawTotal);
+    
+    // Umumiy chegirma va netto summani sentda hisoblab olamiz
+    const totalDiscountCents = Math.round(rawTotalCents * ((discountPercent || 0) / 100));
+    const totalNetCents = rawTotalCents - totalDiscountCents;
 
     let remainingPaidCents = paidCents;
+    let remainingNetCents = totalNetCents;
+    let remainingRawCents = rawTotalCents;
 
     return items.map((item, index) => {
       const isLast = index === items.length - 1;
 
       const itemRawCents = this.toCents(item.price) * item.quantity;
-      const itemDiscountCents = Math.round(
-        itemRawCents * ((discountPercent || 0) / 100),
-      );
-      const itemNetCents = itemRawCents - itemDiscountCents;
+      
+      // Item net summasini taqsimlash (yaxlitlash xatosini oldini olish uchun)
+      let itemNetCents;
+      if (isLast) {
+        itemNetCents = remainingNetCents;
+      } else {
+        // Proportsional taqsimlash
+        itemNetCents = Math.round((totalNetCents * itemRawCents) / rawTotalCents);
+      }
+      
+      // To'lovni taqsimlash
+      let itemPaidCents;
+      if (isLast) {
+        itemPaidCents = remainingPaidCents;
+      } else {
+        // Agar to'liq to'langan bo'lsa, itemni ham to'liq to'langan qilib ko'rsatish
+        if (paidCents === totalNetCents) {
+          itemPaidCents = itemNetCents;
+        } else {
+          itemPaidCents = Math.round((paidCents * itemRawCents) / rawTotalCents);
+        }
+      }
 
-      // Oxirgi itemga qolgan hamma narsani ber (yaxlitlash xatosini oldini olish)
-      const itemPaidCents = isLast
-        ? remainingPaidCents
-        : Math.round((paidCents * itemRawCents) / rawTotalCents);
+      // Limitlar: to'lov netto summadan yoki qolgan puldan oshib ketmasligi kerak
+      itemPaidCents = Math.min(itemPaidCents, itemNetCents, remainingPaidCents);
 
       remainingPaidCents -= itemPaidCents;
+      remainingNetCents -= itemNetCents;
+      remainingRawCents -= itemRawCents;
 
       const itemDebtCents = Math.max(0, itemNetCents - itemPaidCents);
 

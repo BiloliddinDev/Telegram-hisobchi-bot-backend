@@ -58,6 +58,8 @@ router.get("/", authenticate, async (req, res) => {
     let totalRevenueCents = 0;
     let totalDebtCents = 0;
     let totalPaidCents = 0;
+    let totalPaidCashCents = 0;
+    let totalPaidCardCents = 0;
     let totalQuantity = 0;
     let totalReturned = 0;
 
@@ -69,6 +71,8 @@ router.get("/", authenticate, async (req, res) => {
       totalRevenueCents += SaleService.toCents(sale.totalAmount);
       totalDebtCents += SaleService.toCents(sale.debt || 0);
       totalPaidCents += SaleService.toCents(sale.paidAmount || 0);
+      totalPaidCashCents += SaleService.toCents(sale.cashPaid || 0);
+      totalPaidCardCents += SaleService.toCents(sale.cardPaid || 0);
       totalQuantity += sale.quantity;
     }
 
@@ -80,6 +84,8 @@ router.get("/", authenticate, async (req, res) => {
         totalRevenue: SaleService.toDollar(totalRevenueCents),
         totalDebt: SaleService.toDollar(totalDebtCents),
         totalPaid: SaleService.toDollar(totalPaidCents),
+        totalPaidCash: SaleService.toDollar(totalPaidCashCents),
+        totalPaidCard: SaleService.toDollar(totalPaidCardCents),
         totalQuantity,
       },
       sales,

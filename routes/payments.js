@@ -15,11 +15,15 @@ router.use(isSeller);
 router.post("/", async (req, res) => {
   const session = await mongoose.startSession();
   try {
-    const { orderId, amount, notes } = req.body;
+    const { orderId, amount, notes, paymentMethod = "cash" } = req.body;
     const parsedAmount = Number(amount);
 
     if (!orderId || !amount || isNaN(parsedAmount) || parsedAmount <= 0) {
       return res.status(400).json({ error: "orderId va amount majburiy" });
+    }
+
+    if (!["cash", "card"].includes(paymentMethod)) {
+      return res.status(400).json({ error: "paymentMethod: 'cash' yoki 'card' bo'lishi kerak" });
     }
 
     const amountCents = SaleService.toCents(parsedAmount);
@@ -55,6 +59,7 @@ router.post("/", async (req, res) => {
             seller: req.user._id,
             customer: sales[0].customer || null,
             amount: SaleService.toDollar(amountCents),
+            paymentMethod,
             notes: notes || "",
           },
         ],
@@ -78,6 +83,14 @@ router.post("/", async (req, res) => {
         sale.paidAmount = newPaid;
         sale.isDebt = newDebt > 0;
         sale.status = newDebt === 0 ? "paid" : "partial";
+        
+        // Update payment method specific fields if they exist or we want to track them
+        if (paymentMethod === "card") {
+          sale.cardPaid = SaleService.toDollar(SaleService.toCents(sale.cardPaid || 0) + payCents);
+        } else {
+          sale.cashPaid = SaleService.toDollar(SaleService.toCents(sale.cashPaid || 0) + payCents);
+        }
+
         remainingCents -= payCents;
         await sale.save({ session });
       }
@@ -88,7 +101,8 @@ router.post("/", async (req, res) => {
           {
             type: "in",
             amount: SaleService.toDollar(amountCents),
-            description: `To'lov: ${orderId}`,
+            paymentMethod,
+            description: `To'lov (${paymentMethod === "card" ? "Karta" : "Naqd"}): ${orderId}`,
             performedBy: req.user._id,
           },
         ],

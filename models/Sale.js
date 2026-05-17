@@ -96,6 +96,19 @@ const saleSchema = new mongoose.Schema(
       enum: ["paid", "partial", "debt", "returned"],
       default: "paid",
     },
+    paymentMethod: {
+      type: String,
+      enum: ["cash", "card", "mixed"],
+      default: "cash",
+    },
+    cashPaid: {
+      type: Number,
+      default: 0,
+    },
+    cardPaid: {
+      type: Number,
+      default: 0,
+    },
   },
   {
     timestamps: true,
