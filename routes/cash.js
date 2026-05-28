@@ -25,20 +25,43 @@ router.get("/balance", async (req, res) => {
     ]);
 
     let allInCash = 0, allInCard = 0, allOut = 0, allRashot = 0, allOylik = 0, allChiqim = 0;
+    let allOutCash = 0, allOutCard = 0, allRashotCash = 0, allRashotCard = 0, allOylikCash = 0, allOylikCard = 0, allChiqimCash = 0, allChiqimCard = 0;
+
     for (const r of allTimeResult) {
       const { type, method } = r._id;
+      const amount = r.total || 0;
+      const amountCents = SaleService.toCents(amount);
+
       if (type === "in") {
-        if (method === "card") allInCard = r.total;
-        else allInCash = r.total;
+        if (method === "card") allInCard += amount;
+        else allInCash += amount;
       }
-      else if (type === "out") allOut = r.total;
-      else if (type === "rashot") allRashot = r.total;
-      else if (type === "oylik") allOylik = r.total;
-      else if (type === "chiqim") allChiqim = r.total;
+      else if (type === "out") {
+        allOut += amount;
+        if (method === "card") allOutCard += amountCents;
+        else allOutCash += amountCents;
+      }
+      else if (type === "rashot") {
+        allRashot += amount;
+        if (method === "card") allRashotCard += amountCents;
+        else allRashotCash += amountCents;
+      }
+      else if (type === "oylik") {
+        allOylik += amount;
+        if (method === "card") allOylikCard += amountCents;
+        else allOylikCash += amountCents;
+      }
+      else if (type === "chiqim") {
+        allChiqim += amount;
+        if (method === "card") allChiqimCard += amountCents;
+        else allChiqimCash += amountCents;
+      }
     }
 
-    const cashBalanceCents = SaleService.toCents(allInCash) - SaleService.toCents(allOut);
-    const cardBalanceCents = SaleService.toCents(allInCard);
+    // Actual balance for each method - Only 'out' subtracts from Kassa drawer.
+    // Expenses (rashot, oylik, chiqim) are paid from the pocket (the 'out' money).
+    const cashBalanceCents = SaleService.toCents(allInCash) - allOutCash;
+    const cardBalanceCents = SaleService.toCents(allInCard) - allOutCard;
     const totalBalanceCents = cashBalanceCents + cardBalanceCents;
 
     const adminPocketCents =
@@ -75,15 +98,16 @@ router.get("/balance", async (req, res) => {
     let countIn = 0, countOut = 0;
     for (const r of periodResult) {
       const { type, method } = r._id;
+      const amount = r.total || 0;
       if (type === "in") {
-        if (method === "card") totalInCard = r.total;
-        else totalInCash = r.total;
+        if (method === "card") totalInCard += amount;
+        else totalInCash += amount;
         countIn += r.count;
       }
-      else if (type === "out") { totalOut = r.total; countOut = r.count; }
-      else if (type === "rashot") totalRashot = r.total;
-      else if (type === "oylik") totalOylik = r.total;
-      else if (type === "chiqim") totalChiqim = r.total;
+      else if (type === "out") { totalOut += amount; countOut += r.count; }
+      else if (type === "rashot") totalRashot += amount;
+      else if (type === "oylik") totalOylik += amount;
+      else if (type === "chiqim") totalChiqim += amount;
     }
 
     res.json({
@@ -153,6 +177,70 @@ router.get("/transactions", async (req, res) => {
   }
 });
 
+// Manual cash/card in (deposit money to kassa)
+router.post("/in", async (req, res) => {
+  try {
+    const { amount, description, paymentMethod = "cash" } = req.body;
+
+    if (!amount || amount <= 0) {
+      return res.status(400).json({ error: "Summa 0 dan katta bo'lishi kerak" });
+    }
+
+    if (!["cash", "card"].includes(paymentMethod)) {
+      return res.status(400).json({ error: "paymentMethod: 'cash' yoki 'card' bo'lishi kerak" });
+    }
+
+    const transaction = await CashTransaction.create({
+      type: "in",
+      amount: Number(amount),
+      paymentMethod,
+      description: description ? description.trim() : `Manual kirim (${paymentMethod === "card" ? "Karta" : "Naqd"})`,
+      performedBy: req.user._id,
+    });
+
+    await transaction.populate("performedBy", "username firstName lastName role");
+
+    res.status(201).json({
+      message: "Pul muvaffaqiyatli qo'shildi",
+      transaction,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Manual cash/card in (deposit money to kassa)
+router.post("/in", async (req, res) => {
+  try {
+    const { amount, description, paymentMethod = "cash" } = req.body;
+
+    if (!amount || amount <= 0) {
+      return res.status(400).json({ error: "Summa 0 dan katta bo'lishi kerak" });
+    }
+
+    if (!["cash", "card"].includes(paymentMethod)) {
+      return res.status(400).json({ error: "paymentMethod: 'cash' yoki 'card' bo'lishi kerak" });
+    }
+
+    const transaction = await CashTransaction.create({
+      type: "in",
+      amount: Number(amount),
+      paymentMethod,
+      description: description ? description.trim() : `Manual kirim (${paymentMethod === "card" ? "Karta" : "Naqd"})`,
+      performedBy: req.user._id,
+    });
+
+    await transaction.populate("performedBy", "username firstName lastName role");
+
+    res.status(201).json({
+      message: "Pul muvaffaqiyatli qo'shildi",
+      transaction,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Withdraw cash (admin takes money)
 router.post("/withdraw", async (req, res) => {
   try {
@@ -183,15 +271,15 @@ router.post("/withdraw", async (req, res) => {
       },
     ]);
 
-    let totalIn = 0;
-    let totalOut = 0;
+    let totalInCents = 0;
+    let totalOutCents = 0;
     for (const t of totals) {
-      if (t._id === "in") totalIn = t.total;
-      else if (t._id === "out") totalOut = t.total;
+      const amountCents = SaleService.toCents(t.total || 0);
+      if (t._id === "in") totalInCents += amountCents;
+      else totalOutCents += amountCents;
     }
 
-    const currentBalanceCents =
-      SaleService.toCents(totalIn) - SaleService.toCents(totalOut);
+    const currentBalanceCents = totalInCents - totalOutCents;
     const withdrawCents = SaleService.toCents(amount);
 
     if (withdrawCents > currentBalanceCents) {
@@ -226,10 +314,12 @@ router.post("/withdraw", async (req, res) => {
 
 // Admin hamyonidan xarajat (rashot / oylik)
 router.post("/spend", async (req, res) => {
+  const session = await mongoose.startSession();
   try {
-    const { amount, type, description, sellerId } = req.body;
+    const { amount, type, description, sellerId, paymentMethod = "cash" } = req.body;
+    const parsedAmount = Number(amount);
 
-    if (!amount || amount <= 0) {
+    if (!amount || isNaN(parsedAmount) || parsedAmount <= 0) {
       return res.status(400).json({ error: "Summa 0 dan katta bo'lishi kerak" });
     }
 
@@ -237,118 +327,63 @@ router.post("/spend", async (req, res) => {
       return res.status(400).json({ error: "Tur 'rashot', 'oylik' yoki 'chiqim' bo'lishi kerak" });
     }
 
+    if (!["cash", "card"].includes(paymentMethod)) {
+      return res.status(400).json({ error: "paymentMethod: 'cash' yoki 'card' bo'lishi kerak" });
+    }
+
     if (type === "oylik" && !sellerId) {
       return res.status(400).json({ error: "Oylik uchun sotuvchini tanlash majburiy" });
     }
 
-    // Admin hamyon balansini tekshirish
-    const totals = await CashTransaction.aggregate([
-      {
-        $group: {
-          _id: "$type",
-          total: { $sum: "$amount" },
+    const amountCents = SaleService.toCents(parsedAmount);
+
+    await session.withTransaction(async () => {
+      // Tanlangan metod bo'yicha balansni tekshirish
+      const balanceResult = await CashTransaction.aggregate([
+        { $match: { paymentMethod } },
+        {
+          $group: {
+            _id: "$type",
+            total: { $sum: "$amount" },
+          },
         },
-      },
-    ]);
+      ]).session(session);
 
-    let totalOut = 0;
-    let totalRashot = 0;
-    let totalOylik = 0;
-    let totalChiqim = 0;
-    for (const t of totals) {
-      if (t._id === "out") totalOut = t.total;
-      else if (t._id === "rashot") totalRashot = t.total;
-      else if (t._id === "oylik") totalOylik = t.total;
-      else if (t._id === "chiqim") totalChiqim = t.total;
-    }
-
-    const adminPocketCents =
-      SaleService.toCents(totalOut) -
-      SaleService.toCents(totalRashot) -
-      SaleService.toCents(totalOylik) -
-      SaleService.toCents(totalChiqim);
-    const spendCents = SaleService.toCents(amount);
-
-    if (spendCents > adminPocketCents) {
-      const pocket = SaleService.toDollar(adminPocketCents);
-      return res.status(400).json({
-        error: `Admin hamyonida yetarli mablag' yo'q. Hamyon balansi: ${pocket}$`,
+      let totalIn = 0;
+      let totalOut = 0;
+      balanceResult.forEach(r => {
+        if (r._id === "in") totalIn += SaleService.toCents(r.total);
+        else if (r._id === "out") totalOut += SaleService.toCents(r.total);
       });
-    }
 
-    const [transaction] = await CashTransaction.create([{
-      type,
-      amount: Number(SaleService.toDollar(SaleService.toCents(amount))),
-      description: description ? description.trim() : "",
-      performedBy: req.user._id,
-      relatedSeller: type === "oylik" ? sellerId : null,
-    }]);
+      const currentBalanceCents = totalIn - totalOut;
 
-    // Race condition tekshiruvi: yozuvdan KEYIN ham balansni qayta tekshiramiz
-    const newTotals = await CashTransaction.aggregate([
-      { $group: { _id: "$type", total: { $sum: "$amount" } } },
-    ]);
-    let newOut = 0, newRashot = 0, newOylik = 0, newChiqim = 0;
-    for (const t of newTotals) {
-      if (t._id === "out") newOut = t.total;
-      else if (t._id === "rashot") newRashot = t.total;
-      else if (t._id === "oylik") newOylik = t.total;
-      else if (t._id === "chiqim") newChiqim = t.total;
-    }
-    const newPocketCents =
-      SaleService.toCents(newOut) -
-      SaleService.toCents(newRashot) -
-      SaleService.toCents(newOylik) -
-      SaleService.toCents(newChiqim);
+      if (amountCents > currentBalanceCents) {
+        const methodName = paymentMethod === "card" ? "Bank (Karta)" : "Kassa (Naqd)";
+        throw new Error(`${methodName}da yetarli mablag' yo'q. Mavjud: ${SaleService.toDollar(currentBalanceCents)}$`);
+      }
 
-    if (newPocketCents < 0) {
-      // Kompensatsiya: manfiy ketdi — yozuvni o'chiramiz
-      await CashTransaction.findByIdAndDelete(transaction._id);
-      return res.status(400).json({
-        error: "Admin hamyonida yetarli mablag' yo'q (bir vaqtda bir nechta so'rov). Qayta urinib ko'ring.",
+      const [transaction] = await CashTransaction.create([{
+        type,
+        amount: parsedAmount,
+        paymentMethod,
+        description: description ? description.trim() : "",
+        performedBy: req.user._id,
+        relatedSeller: type === "oylik" ? sellerId : null,
+      }], { session });
+
+      await transaction.populate("performedBy", "username firstName lastName role");
+      await transaction.populate("relatedSeller", "firstName lastName username");
+
+      res.status(201).json({
+        message: type === "oylik" ? "Oylik muvaffaqiyatli berildi" : type === "chiqim" ? "Dokon xarajati qayd etildi" : "Xarajat qayd etildi",
+        transaction,
       });
-    }
-
-    await transaction.populate("performedBy", "username firstName lastName role");
-    await transaction.populate("relatedSeller", "firstName lastName username");
-
-    res.status(201).json({
-      message: type === "oylik" ? "Oylik muvaffaqiyatli berildi" : type === "chiqim" ? "Dokon xarajati qayd etildi" : "Xarajat qayd etildi",
-      transaction,
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Delete transaction (for corrections)
-router.delete("/transactions/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({ error: "Noto'g'ri ID format" });
-    }
-
-    const transaction = await CashTransaction.findById(id);
-
-    if (!transaction) {
-      return res.status(404).json({ error: "Tranzaksiya topilmadi" });
-    }
-
-    // Faqat 'out' (admin olgan pul) tranzaksiyalarni o'chirish mumkin
-    if (transaction.type === "in") {
-      return res.status(400).json({
-        error:
-          "Kirim tranzaksiyasini o'chirish mumkin emas. Faqat chiqim (pul olish) o'chiriladi.",
-      });
-    }
-
-    await CashTransaction.findByIdAndDelete(id);
-
-    res.json({ message: "Tranzaksiya o'chirildi" });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(400).json({ error: error.message });
+  } finally {
+    await session.endSession();
   }
 });
 

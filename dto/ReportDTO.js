@@ -200,13 +200,18 @@ class ReportDTO {
 
     for (const r of cashResult) {
       const { type, method } = r._id;
+      const amountCents = SaleService.toCents(r.total || 0);
+      const isCard = method === "card";
+
       if (type === "in") {
-        if (method === "card") cardTotalIn += SaleService.toCents(r.total);
-        else cashTotalIn += SaleService.toCents(r.total);
+        if (isCard) cardTotalIn += amountCents;
+        else cashTotalIn += amountCents;
       } else if (type === "out") {
-        totalOut += SaleService.toCents(r.total);
-        if (method === "card") cardOut += SaleService.toCents(r.total);
-        else cashOut += SaleService.toCents(r.total);
+        // Only 'out' (withdrawals) subtract from Kassa drawer.
+        // Expenses (rashot, oylik, chiqim) come from the pocket.
+        totalOut += amountCents;
+        if (isCard) cardOut += amountCents;
+        else cashOut += amountCents;
       }
     }
 

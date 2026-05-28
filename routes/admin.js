@@ -243,6 +243,9 @@ router.get("/sellers/:sellerId/sales", async (req, res) => {
           paidAmount: 0,
           status: sale.status,
           dueDate: sale.dueDate,
+          paymentMethod: sale.paymentMethod || "cash",
+          cashPaid: 0,
+          cardPaid: 0,
         };
       }
 
@@ -269,10 +272,25 @@ router.get("/sellers/:sellerId/sales", async (req, res) => {
           SaleService.toCents(groupsMap[key].paidAmount) +
           SaleService.toCents(sale.paidAmount || 0),
         );
+        groupsMap[key].cashPaid = SaleService.toDollar(
+          SaleService.toCents(groupsMap[key].cashPaid || 0) +
+          SaleService.toCents(sale.cashPaid || 0),
+        );
+        groupsMap[key].cardPaid = SaleService.toDollar(
+          SaleService.toCents(groupsMap[key].cardPaid || 0) +
+          SaleService.toCents(sale.cardPaid || 0),
+        );
         groupsMap[key].rawTotal = SaleService.toDollar(
           SaleService.toCents(groupsMap[key].rawTotal) +
           SaleService.toCents(sale.price * sale.quantity),
         );
+        // Aralash to'lov bo'lsa, qismlarni jamlash
+        if (sale.paymentMethod === "mixed") {
+          groupsMap[key].paymentMethod = "mixed";
+        } else if (groupsMap[key].paymentMethod !== sale.paymentMethod) {
+           // Agar bir xil orderId dagi itemlar har xil metodda bo'lsa (kamdan-kam holat), mixed deb belgilaymiz
+           groupsMap[key].paymentMethod = "mixed";
+        }
       }
       groupsMap[key].discountPercent = sale.discountPercent || 0;
     }
