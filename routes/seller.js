@@ -119,6 +119,9 @@ router.get("/sales", async (req, res) => {
           debt: 0,
           paidAmount: 0,
           dueDate: sale.dueDate,
+          paymentMethod: sale.paymentMethod || "cash",
+          cashPaid: 0,
+          cardPaid: 0,
         };
       }
 
@@ -145,10 +148,24 @@ router.get("/sales", async (req, res) => {
           SaleService.toCents(groupsMap[key].paidAmount) +
             SaleService.toCents(sale.paidAmount || 0),
         );
+        groupsMap[key].cashPaid = SaleService.toDollar(
+          SaleService.toCents(groupsMap[key].cashPaid || 0) +
+          SaleService.toCents(sale.cashPaid || 0),
+        );
+        groupsMap[key].cardPaid = SaleService.toDollar(
+          SaleService.toCents(groupsMap[key].cardPaid || 0) +
+          SaleService.toCents(sale.cardPaid || 0),
+        );
         groupsMap[key].rawTotal = SaleService.toDollar(
           SaleService.toCents(groupsMap[key].rawTotal) +
             SaleService.toCents(sale.price * sale.quantity),
         );
+        // Aralash to'lov bo'lsa, qismlarni jamlash
+        if (sale.paymentMethod === "mixed") {
+          groupsMap[key].paymentMethod = "mixed";
+        } else if (groupsMap[key].paymentMethod !== sale.paymentMethod) {
+          groupsMap[key].paymentMethod = "mixed";
+        }
         // discountPercent faol itemdan olinadi (qaytarilgan recordda eski qiymat bo'lishi mumkin)
         groupsMap[key].discountPercent = sale.discountPercent || 0;
       }
@@ -165,7 +182,35 @@ router.get("/sales", async (req, res) => {
       }))
       .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 
-    res.json({ sales: groupedSales });
+    const stats = {
+      totalOrders: groupedSales.length,
+      totalAmount: SaleService.toDollar(
+        groupedSales.reduce(
+          (sum, g) => sum + SaleService.toCents(g.totalAmount),
+          0,
+        ),
+      ),
+      totalDebt: SaleService.toDollar(
+        groupedSales.reduce(
+          (sum, g) => sum + SaleService.toCents(g.debt),
+          0,
+        ),
+      ),
+      totalPaid: SaleService.toDollar(
+        groupedSales.reduce(
+          (sum, g) => sum + SaleService.toCents(g.paidAmount),
+          0,
+        ),
+      ),
+      totalPaidCash: SaleService.toDollar(
+        sales.reduce((sum, s) => sum + (s.status !== "returned" ? SaleService.toCents(s.cashPaid || 0) : 0), 0)
+      ),
+      totalPaidCard: SaleService.toDollar(
+        sales.reduce((sum, s) => sum + (s.status !== "returned" ? SaleService.toCents(s.cardPaid || 0) : 0), 0)
+      ),
+    };
+
+    res.json({ sales: groupedSales, stats });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

@@ -330,6 +330,9 @@ router.get("/", async (req, res) => {
           discount: 0,
           discountPercent: 0,
           dueDate: sale.dueDate,
+          paymentMethod: sale.paymentMethod || "cash",
+          cashPaid: 0,
+          cardPaid: 0,
         };
       }
 
@@ -356,6 +359,14 @@ router.get("/", async (req, res) => {
           SaleService.toCents(groupsMap[key].totalAmount) +
             SaleService.toCents(sale.totalAmount),
         );
+        groupsMap[key].cashPaid = SaleService.toDollar(
+          SaleService.toCents(groupsMap[key].cashPaid || 0) +
+          SaleService.toCents(sale.cashPaid || 0),
+        );
+        groupsMap[key].cardPaid = SaleService.toDollar(
+          SaleService.toCents(groupsMap[key].cardPaid || 0) +
+          SaleService.toCents(sale.cardPaid || 0),
+        );
         groupsMap[key].rawTotal = SaleService.toDollar(
           SaleService.toCents(groupsMap[key].rawTotal) +
             SaleService.toCents(sale.price * sale.quantity),
@@ -364,6 +375,12 @@ router.get("/", async (req, res) => {
           SaleService.toCents(groupsMap[key].discount) +
             SaleService.toCents(sale.discount || 0),
         );
+        // Aralash to'lov bo'lsa, qismlarni jamlash
+        if (sale.paymentMethod === "mixed") {
+          groupsMap[key].paymentMethod = "mixed";
+        } else if (groupsMap[key].paymentMethod !== sale.paymentMethod) {
+          groupsMap[key].paymentMethod = "mixed";
+        }
         // discountPercent faol itemdan olinadi
         groupsMap[key].discountPercent = sale.discountPercent || 0;
       }
