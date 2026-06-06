@@ -262,7 +262,7 @@ router.post("/withdraw", async (req, res) => {
 
     // Kassa balansini tekshirish (metod bo'yicha)
     const totals = await CashTransaction.aggregate([
-      { $match: { paymentMethod } },
+      { $match: { paymentMethod, type: { $in: ["in", "out"] } } },
       {
         $group: {
           _id: "$type",
@@ -276,7 +276,7 @@ router.post("/withdraw", async (req, res) => {
     for (const t of totals) {
       const amountCents = SaleService.toCents(t.total || 0);
       if (t._id === "in") totalInCents += amountCents;
-      else totalOutCents += amountCents;
+      else if (t._id === "out") totalOutCents += amountCents;
     }
 
     const currentBalanceCents = totalInCents - totalOutCents;
@@ -338,7 +338,7 @@ router.post("/spend", async (req, res) => {
     const amountCents = SaleService.toCents(parsedAmount);
 
     await session.withTransaction(async () => {
-      // Tanlangan metod bo'yicha balansni tekshirish
+      // Tanlangan metod bo'yicha Admin hamyonidagi balansni tekshirish
       const balanceResult = await CashTransaction.aggregate([
         { $match: { paymentMethod } },
         {
@@ -349,18 +349,19 @@ router.post("/spend", async (req, res) => {
         },
       ]).session(session);
 
-      let totalIn = 0;
-      let totalOut = 0;
+      let totalOut = 0; // Kassadan olingan pul
+      let totalSpent = 0; // Hamyondan qilingan xarajatlar
       balanceResult.forEach(r => {
-        if (r._id === "in") totalIn += SaleService.toCents(r.total);
-        else if (r._id === "out") totalOut += SaleService.toCents(r.total);
+        const amountCents = SaleService.toCents(r.total || 0);
+        if (r._id === "out") totalOut += amountCents;
+        else if (["rashot", "oylik", "chiqim"].includes(r._id)) totalSpent += amountCents;
       });
 
-      const currentBalanceCents = totalIn - totalOut;
+      const currentPocketBalanceCents = totalOut - totalSpent;
 
-      if (amountCents > currentBalanceCents) {
-        const methodName = paymentMethod === "card" ? "Bank (Karta)" : "Kassa (Naqd)";
-        throw new Error(`${methodName}da yetarli mablag' yo'q. Mavjud: ${SaleService.toDollar(currentBalanceCents)}$`);
+      if (amountCents > currentPocketBalanceCents) {
+        const methodName = paymentMethod === "card" ? "Admin hamyoni (Karta)" : "Admin hamyoni (Naqd)";
+        throw new Error(`${methodName}da yetarli mablag' yo'q. Mavjud: ${SaleService.toDollar(currentPocketBalanceCents)}$`);
       }
 
       const [transaction] = await CashTransaction.create([{
