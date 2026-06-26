@@ -260,9 +260,16 @@ router.post("/withdraw", async (req, res) => {
       return res.status(400).json({ error: "paymentMethod: 'cash' yoki 'card' bo'lishi kerak" });
     }
 
-    // Kassa balansini tekshirish (metod bo'yicha)
+    // Kassa balansini tekshirish (metod bo'yicha).
+    // MUHIM: "naqd" = "karta bo'lmagan hamma narsa" — bu /balance endpointidagi
+    // hisob bilan bir xil bo'lishi shart. paymentMethod maydoni yo'q eski yozuvlar
+    // ham naqd hisoblanadi, aks holda ko'rsatilgan balans bilan farq chiqadi.
+    const methodFilter =
+      paymentMethod === "card"
+        ? { paymentMethod: "card" }
+        : { paymentMethod: { $ne: "card" } };
     const totals = await CashTransaction.aggregate([
-      { $match: { paymentMethod, type: { $in: ["in", "out"] } } },
+      { $match: { ...methodFilter, type: { $in: ["in", "out"] } } },
       {
         $group: {
           _id: "$type",
@@ -338,9 +345,14 @@ router.post("/spend", async (req, res) => {
     const amountCents = SaleService.toCents(parsedAmount);
 
     await session.withTransaction(async () => {
-      // Tanlangan metod bo'yicha Admin hamyonidagi balansni tekshirish
+      // Tanlangan metod bo'yicha Admin hamyonidagi balansni tekshirish.
+      // "naqd" = "karta bo'lmagan hamma narsa" (paymentMethodsiz eski yozuvlar ham).
+      const methodFilter =
+        paymentMethod === "card"
+          ? { paymentMethod: "card" }
+          : { paymentMethod: { $ne: "card" } };
       const balanceResult = await CashTransaction.aggregate([
-        { $match: { paymentMethod } },
+        { $match: methodFilter },
         {
           $group: {
             _id: "$type",
